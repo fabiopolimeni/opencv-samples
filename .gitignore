@@ -1,3 +1,7 @@
+
+\.vscode/
+\.vs/
+
 build/
 bin/
 
@@ -11,6 +15,3 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 
-\.vscode/c_cpp_properties\.json
-
-\.vscode/settings\.json
