@@ -26,7 +26,7 @@ void help(const char* path) {
     std::cout << std::endl
         << "Shows the view of the chosen camera" << std::endl
         << "usage: " << progname << " [options]" << std::endl
-        << "usage: " << progname << " <camera-id> <width> <height>" << std::endl
+        << "usage: " << progname << " <camera-id> <width> <height> <fps>" << std::endl
         << "\toptions:" << std::endl
         << "\t -e: enumerates the cameras in the system" << std::endl;
 }
@@ -67,18 +67,23 @@ int main(int32_t argc, char* argv[]) {
     try {
         std::string options =
             "{help h usage| |}"
-            "{enum e| |Enumerate available cameras|}"
+            "{enum e| |Enumerates available cameras|}"
             "{@camera|0|Camera to show|}"
             "{@width|1280|Desired frame width|}"
-            "{@height|720|desired frame height|}"
-            "{@fps|30|desired frame-rate|}";
+            "{@height|720|Desired frame height|}"
+            "{@fps|30|Desired frame-rate|}";
 
         cv::CommandLineParser parser(argc, argv, options);
+        parser.about("Shows the view of the chosen camera");
 
-        if (parser.has("help"))
-        {
-            help(argv[0]);
+        if (parser.has("help")) {
+            parser.printMessage();
             return EXIT_SUCCESS;
+        }
+
+        if (!parser.check()) {
+            parser.printErrors();
+            return EXIT_FAILURE;
         }
 
         // Users wants to know the cameras availables
@@ -123,6 +128,7 @@ int main(int32_t argc, char* argv[]) {
             << std::endl;
 
         const std::string window_name("Camera Show");
+        cv::startWindowThread();
         cv::namedWindow(window_name);
 
         cv::Mat frame;
@@ -138,7 +144,6 @@ int main(int32_t argc, char* argv[]) {
 
     } catch (cv::Exception& cv_exc) {
         std::cerr << cv_exc.msg << std::endl;
-        help(argv[0]);
         std::exit(EXIT_FAILURE);
     }
 
