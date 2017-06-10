@@ -15,3 +15,11 @@ message(STATUS "CMAKE_CONFIGURATION_TYPES: " ${CMAKE_CONFIGURATION_TYPES})
 
 # Add samples subdirectories
 add_subdirectory(src/show_image)
+add_subdirectory(src/show_camera)
+
+# Copy shared libraries to destination folder
+if (CMAKE_HOST_WIN32)
+    file(GLOB OPENCV_DLLS "${OpenCV_BINS}/*.dll")
+    message(STATUS "OPENCV_DLLS: " ${OPENCV_DLLS})
+    install(FILES ${OPENCV_DLLS} DESTINATION bin)
+endif()

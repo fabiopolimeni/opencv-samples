@@ -1,4 +1,4 @@
-set(SAMPLE_NAME show_image)
+set(SAMPLE_NAME show_camera)
 
 add_executable(${SAMPLE_NAME} main.cpp)
 target_link_libraries(${SAMPLE_NAME} ${OpenCV_LIBS})
