@@ -32,8 +32,9 @@ void help(const char* path) {
 }
 
 struct camera_info {
-    int32_t       id;
+    int32_t     id;
     cv::Size    frame_size;
+    int32_t     fps;
 };
 
 std::vector<camera_info> enum_available_cameras() {
@@ -49,8 +50,9 @@ std::vector<camera_info> enum_available_cameras() {
         cameras.push_back({
             device_counts,
             cv::Size(
-                (int32_t)camera.get(cv::CAP_PROP_FRAME_WIDTH),
-                (int32_t)camera.get(cv::CAP_PROP_FRAME_HEIGHT))
+                (int32_t)camera.get(CV_CAP_PROP_FRAME_WIDTH),
+                (int32_t)camera.get(CV_CAP_PROP_FRAME_HEIGHT)),
+            (int32_t)camera.get(CV_CAP_PROP_FPS)
         });
         
         ++device_counts;
@@ -68,7 +70,8 @@ int main(int32_t argc, char* argv[]) {
             "{enum e| |Enumerate available cameras|}"
             "{@camera|0|Camera to show|}"
             "{@width|1280|Desired frame width|}"
-            "{@height|720|desired frame height|}";
+            "{@height|720|desired frame height|}"
+            "{@fps|30|desired frame-rate|}";
 
         cv::CommandLineParser parser(argc, argv, options);
 
@@ -89,7 +92,8 @@ int main(int32_t argc, char* argv[]) {
             parser.get<int32_t>("@camera"),
             cv::Size(
                 parser.get<int32_t>("@width"),
-                parser.get<int32_t>("@height"))
+                parser.get<int32_t>("@height")),
+            parser.get<int32_t>("@fps")
         };
 
         cv::VideoCapture vc;
@@ -99,15 +103,37 @@ int main(int32_t argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
+        vc.set(CV_CAP_PROP_FRAME_WIDTH, (double)ci.frame_size.width);
+        vc.set(CV_CAP_PROP_FRAME_HEIGHT, (double)ci.frame_size.height);
+        vc.set(CV_CAP_PROP_FPS, (double)ci.fps);
+
+        camera_info camera = {
+            ci.id,
+            cv::Size(
+                (int32_t)vc.get(CV_CAP_PROP_FRAME_WIDTH),
+                (int32_t)vc.get(CV_CAP_PROP_FRAME_HEIGHT)),
+            (int32_t)vc.get(CV_CAP_PROP_FPS)
+        };
+
+        std::cout << std::endl
+            << "Camera id: " << camera.id
+            << " (" << camera.frame_size.width
+            << "x" << camera.frame_size.height
+            << "@" << camera.fps << ")"
+            << std::endl;
+
         const std::string window_name("Camera Show");
         cv::namedWindow(window_name);
 
         cv::Mat frame;
         while (vc.grab() && vc.retrieve(frame)) {
             cv::imshow(window_name, frame);
-            auto key = cv::waitKey(10);
+
+            auto key = cv::waitKey((int32_t)(1000.0/camera.fps));
             if (key == 27) // ESCAPE
                 break;
+
+            printf("FPS: %d\r", camera.fps);
         }
 
     } catch (cv::Exception& cv_exc) {
