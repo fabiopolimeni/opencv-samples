@@ -66,7 +66,8 @@ int main(int32_t argc, char* argv[]) {
 
     try {
         std::string options =
-            "{help h usage| |}"
+            "{help h usage| |Program usage}"
+            "{info i| |OpenCV build info}"
             "{enum e| |Enumerates available cameras|}"
             "{@camera|0|Camera to show|}"
             "{@width|1280|Desired frame width|}"
@@ -78,6 +79,11 @@ int main(int32_t argc, char* argv[]) {
 
         if (parser.has("help")) {
             parser.printMessage();
+            return EXIT_SUCCESS;
+        }
+
+        if (parser.has("info")) {
+            std::cout << cv::getBuildInformation() << std::endl;
             return EXIT_SUCCESS;
         }
 
