@@ -62,6 +62,15 @@ std::vector<camera_info> enum_available_cameras() {
     return cameras;
 }
 
+void print_camera_info(const camera_info& camera) {
+    std::cout << std::endl
+        << "Camera id: " << camera.id
+        << " (" << camera.frame_size.width
+        << "x" << camera.frame_size.height
+        << "@" << camera.fps << ")"
+        << std::endl;
+}
+
 int main(int32_t argc, char* argv[]) {
 
     try {
@@ -95,6 +104,12 @@ int main(int32_t argc, char* argv[]) {
         // Users wants to know the cameras availables
         if (parser.has("e")) {
             auto cameras = enum_available_cameras();
+
+            std::cout << "Available cameras: " << std::endl;
+            for (auto camera : cameras) {
+                print_camera_info(camera);
+            }
+
             return EXIT_SUCCESS;
         }
 
@@ -126,12 +141,8 @@ int main(int32_t argc, char* argv[]) {
             (int32_t)vc.get(CV_CAP_PROP_FPS)
         };
 
-        std::cout << std::endl
-            << "Camera id: " << camera.id
-            << " (" << camera.frame_size.width
-            << "x" << camera.frame_size.height
-            << "@" << camera.fps << ")"
-            << std::endl;
+        // Print caps of current camera
+        print_camera_info(camera);
 
         const std::string window_name("Camera Show");
         cv::startWindowThread();
