@@ -4,6 +4,9 @@
 
 build/
 bin/
+deps/bgfx/
+lib/
+include/
 
 CMakeCache.txt
 CMakeFiles

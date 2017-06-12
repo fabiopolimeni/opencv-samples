@@ -13,6 +13,9 @@ message(STATUS "CMAKE_INSTALL_PREFIX: " ${CMAKE_INSTALL_PREFIX})
 message(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})
 message(STATUS "CMAKE_CONFIGURATION_TYPES: " ${CMAKE_CONFIGURATION_TYPES})
 
+# Add bgfx dependency
+add_subdirectory(deps/bgfx)
+
 # Add samples subdirectories
 add_subdirectory(src/show_image)
 add_subdirectory(src/show_camera)
