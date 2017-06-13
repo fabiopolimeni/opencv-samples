@@ -1,0 +1,2 @@
+[submodule "deps/bgfx"]
+	url = https://github.com/JoshuaBrookover/bgfx.cmake.git
