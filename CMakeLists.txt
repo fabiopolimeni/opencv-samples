@@ -13,12 +13,21 @@ message(STATUS "CMAKE_INSTALL_PREFIX: " ${CMAKE_INSTALL_PREFIX})
 message(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})
 message(STATUS "CMAKE_CONFIGURATION_TYPES: " ${CMAKE_CONFIGURATION_TYPES})
 
-# Add bgfx dependency
-add_subdirectory(deps/bgfx)
+# Add dependencies
+set(DEPS_DIR deps)
 
-# Add samples subdirectories
+# bgfx
+set(DEPS_BGFX_DIR ${DEPS_DIR}/bgfx)
+add_subdirectory(${DEPS_BGFX_DIR})
+include_directories(
+    ${DEPS_BGFX_DIR}/bgfx/include
+    ${DEPS_BGFX_DIR}/bimg/include
+    ${DEPS_BGFX_DIR}/bx/include)
+
+# Add samples
 add_subdirectory(src/show_image)
 add_subdirectory(src/show_camera)
+add_subdirectory(src/show_gui)
 
 # Copy shared libraries to destination folder
 if (CMAKE_HOST_WIN32)
