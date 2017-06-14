@@ -24,6 +24,8 @@ include_directories(
     ${DEPS_BGFX_DIR}/bimg/include
     ${DEPS_BGFX_DIR}/bx/include)
 
+target_compile_definitions(bgfx PRIVATE "BGFX_CONFIG_RENDERER_OPENGL=41")
+
 # Add samples
 add_subdirectory(src/show_image)
 add_subdirectory(src/show_camera)
