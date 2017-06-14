@@ -21,19 +21,6 @@
 
 namespace {
 
-	bx::AllocatorI* getDefaultAllocator()
-	{
-BX_PRAGMA_DIAGNOSTIC_PUSH();
-BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4459); // warning C4459: declaration of 's_allocator' hides global declaration
-BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wshadow");
-		static bx::CrtAllocator s_allocator;
-		return &s_allocator;
-BX_PRAGMA_DIAGNOSTIC_POP();
-	}
-    
-    static bx::AllocatorI* g_allocator = getDefaultAllocator();
-    typedef bx::StringT<&g_allocator> String;
-
     template<class T>
     T base_name(T const & path, T const & delims = "/\\") {
         return path.substr(path.find_last_of(delims) + 1);
@@ -263,7 +250,7 @@ class ShowGUI : public entry::AppI {
 	}
 
 	void initGUI(int _argc, char** _argv) {
-		m_showVideoWindow = true;
+		m_showVideoWindow = false;
 
 		// Initialise GUI
 		imguiCreate();
@@ -341,7 +328,7 @@ class ShowGUI : public entry::AppI {
 			// Use debug font to print information about this example.
 			bgfx::dbgTextClear();
 
-			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: %s", m_progName.getPtr());
+			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: %s", m_progName.c_str());
 			bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
 			bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
 
@@ -419,7 +406,7 @@ class ShowGUI : public entry::AppI {
 						ImGuiWindowFlags_AlwaysAutoResize); {
 
 							ImGui::Image((ImTextureID)(uintptr_t)m_texRGB.idx,
-								ImVec2(cameraFrame.cols, cameraFrame.rows));
+								ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows));
 							
 						ImGui::End();
 					}
@@ -443,10 +430,10 @@ class ShowGUI : public entry::AppI {
 		return false;
 	}
 
-	String     				m_progName;
     entry::MouseState 		m_mouseState;
 	bgfx::TextureHandle		m_texRGB;
 	std::vector<uint8_t>	m_imagePixels;
+	std::string				m_progName;
 
 	cv::VideoCapture		m_videoCapture;
 	CameraInfo				m_cameraInfo;
