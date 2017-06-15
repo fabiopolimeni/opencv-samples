@@ -250,7 +250,7 @@ class ShowGUI : public entry::AppI {
 	}
 
 	void initGUI(int _argc, char** _argv) {
-		m_showVideoWindow = false;
+		m_showVideoWindow = true;
 
 		// Initialise GUI
 		imguiCreate();
@@ -419,10 +419,20 @@ class ShowGUI : public entry::AppI {
 			// process submitted rendering primitives.
 			bgfx::frame();
 
+
 			// Quit
             if (inputGetKeyState(entry::Key::Esc)) {
                 return false;
             }
+
+			uint8_t keyModifiers = inputGetModifiersState();
+
+			// Toggle windows
+			if (keyModifiers & entry::Modifier::LeftShift) {
+				if (inputGetKeyState(entry::Key::KeyD)) {
+					m_showVideoWindow = !m_showVideoWindow;
+				}
+			}
 
 			return true;
 		}
