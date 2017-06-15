@@ -18,6 +18,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace {
 
@@ -287,8 +288,8 @@ class ShowGUI : public entry::AppI {
 		initBgfx(_argc, _argv);
 		initGUI(_argc, _argv);
 
-		// Create the textures to display
-		m_texRGB = bgfx::createTexture2D(
+		// Create the texture of the video to display
+		m_texRGBA = bgfx::createTexture2D(
 			m_cameraInfo.frame_size.width,					// width
 			m_cameraInfo.frame_size.height,					// height
 			false, 											// no mip-maps
@@ -298,12 +299,25 @@ class ShowGUI : public entry::AppI {
 			nullptr											// mutable
 		);
 
+		// Create the textures for display the channels separately
+		for (auto& tex : m_texChannels) {
+			tex = bgfx::createTexture2D(
+				m_cameraInfo.frame_size.width,					// width
+				m_cameraInfo.frame_size.height,					// height
+				false, 											// no mip-maps
+				1,												// number of layers
+				bgfx::TextureFormat::Enum::R8,					// format
+				BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
+				nullptr											// mutable
+			);
+		}
+
 		m_timeOffset = bx::getHPCounter();
 	}
 
 	virtual int shutdown() override	{
 		imguiDestroy();
-		bgfx::destroyTexture(m_texRGB);
+		bgfx::destroyTexture(m_texRGBA);
 		bgfx::shutdown();
 		return EXIT_SUCCESS;
 	}
@@ -351,16 +365,27 @@ class ShowGUI : public entry::AppI {
 					cameraFrame.cols, cameraFrame.rows,
 					cvTypeToString(imageFrameType).c_str());
 
+				cv::Mat frameChannels[3];
 				{
 					// Make sure we are in the right format and convert to UMat
-					cv::UMat frameImage, rgbImage;
-					cameraFrame.convertTo(frameImage, CV_8UC3);
-					cv::cvtColor(frameImage, rgbImage, cv::COLOR_BGR2RGBA);
+					cv::UMat bgr, lab, ycrcb, hsv, rgba;
+					cameraFrame.convertTo(bgr, CV_8UC3);
 
-					// TODO: Operate on frameImage (UMat)
+					// Operate on frameImage (UMat)
+					cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
+					cv::cvtColor(bgr, ycrcb, cv::COLOR_BGR2YCrCb);
+					cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
+					cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
+
+					// Extract the channels
+					std::vector<cv::UMat> channels;
+					cv::split(rgba, channels);
 
 					// Convert back to Mat
-					cameraFrame = rgbImage.getMat(cv::ACCESS_READ).clone();
+					cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
+					frameChannels[0] = channels[0].getMat(cv::ACCESS_READ).clone();
+					frameChannels[1] = channels[1].getMat(cv::ACCESS_READ).clone();
+					frameChannels[2] = channels[2].getMat(cv::ACCESS_READ).clone();
 				}
 
 				size_t imageSize = cameraFrame.total() * cameraFrame.elemSize();
@@ -386,7 +411,7 @@ class ShowGUI : public entry::AppI {
 
 				// Copy camera frame into the texture
 				bgfx::updateTexture2D(
-					m_texRGB,			// texture handle
+					m_texRGBA,			// texture handle
 					0, 0, 				// mip, layer
 					0, 0,				// start x, y
 					cameraFrame.cols,	// width
@@ -414,8 +439,26 @@ class ShowGUI : public entry::AppI {
 							| ImGuiWindowFlags_NoScrollbar
 							| ImGuiWindowFlags_NoResize)) {
 
-								ImGui::Image((ImTextureID)(uintptr_t)m_texRGB.idx,
-									ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows));
+							auto frameSize = ImVec2(
+								(float)cameraFrame.cols,
+								(float)cameraFrame.rows);
+							// Show the main frame
+							ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
+							// Show frame's channels
+							ImGui::BeginGroup();
+							{
+								for (auto texChannel : m_texChannels) {
+									auto frameChannelSize = ImVec2(
+										frameSize.x * .332f,
+										frameSize.y * .332f);
+									ImGui::Image(
+										(ImTextureID)(uintptr_t)m_texRGBA.idx,
+										frameChannelSize);
+									
+									ImGui::SameLine();
+								}
+								ImGui::EndGroup();
+							}
 						}
 						
 						ImGui::End();
@@ -450,8 +493,10 @@ class ShowGUI : public entry::AppI {
 	}
 
     entry::MouseState 		m_mouseState;
-	bgfx::TextureHandle		m_texRGB;
+	bgfx::TextureHandle		m_texRGBA;
+	bgfx::TextureHandle		m_texChannels[3];
 	std::vector<uint8_t>	m_imagePixels;
+	std::vector<uint8_t>	m_imageChannels[3];
 	std::string				m_progName;
 
 	cv::VideoCapture		m_videoCapture;
