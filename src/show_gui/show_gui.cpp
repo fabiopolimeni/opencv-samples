@@ -98,6 +98,86 @@ namespace {
 
 class ShowGUI : public entry::AppI {
 
+	void setupGUIStyle() {
+
+		// Fonts
+		//ImGuiIO& io = ImGui::GetIO();
+		//io.Fonts->Clear();
+		//io.Fonts->AddFontDefault();
+		// io.Fonts->AddFontFromFileTTF("font/droidsans.ttf", 16);
+		// io.Fonts->AddFontFromFileTTF("font/chp-fire.ttf", 16);
+		// io.Fonts->AddFontFromFileTTF("font/roboto-regular.ttf", 16);
+		// io.Fonts->AddFontFromFileTTF("font/ruritania.ttf", 16);
+		// io.Fonts->AddFontFromFileTTF("font/signika-regular.ttf", 16);
+		//io.Fonts->Build();
+		//io.FontDefault = io.Fonts->Fonts[2];
+
+		// Style
+		ImGuiStyle& style = ImGui::GetStyle();
+		style.GrabRounding = 0;					// Radius of grabs corners rounding. Set to 0.0f to have rectangular slider grabs.
+		style.ScrollbarRounding = 2;			// Radius of grab corners for scrollbar
+		style.FrameRounding = 2;				// Radius of frame corners rounding. Set to 0.0f to have rectangular frame (used by most widgets).
+		style.WindowRounding = 2;				// Radius of window corners rounding. Set to 0.0f to have rectangular windows
+		style.ChildWindowRounding = 0;	        // Radius of child window corners rounding. Set to 0.0f to have rectangular windows
+		style.FramePadding = ImVec2(0,0); 		// Padding within a framed rectangle (used by most widgets)
+    	style.ItemSpacing = ImVec2(1,1);  		// Horizontal and vertical spacing between widgets/lines
+    	style.ItemInnerSpacing = ImVec2(3,3);   // Horizontal and vertical spacing between within elements of a composed widget (e.g. a slider and its label)
+    	//style.IndentSpacing;              	// Horizontal indentation when e.g. entering a tree node. Generally == (FontSize + FramePadding.x*2).
+    
+		// Colors
+		style.Colors[ImGuiCol_Text] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+		style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.84f, 0.84f, 0.84f, 1.00f);
+		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.59f, 0.59f, 0.59f, 0.90f);
+		style.Colors[ImGuiCol_ChildWindowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+		style.Colors[ImGuiCol_PopupBg] = ImVec4(0.05f, 0.05f, 0.10f, 0.90f);
+		style.Colors[ImGuiCol_Border] = ImVec4(0.70f, 0.70f, 0.70f, 0.65f);
+		style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.15f, 0.15f, 0.15f, 0.09f);
+		style.Colors[ImGuiCol_FrameBg] = ImVec4(0.78f, 0.80f, 0.80f, 0.30f);
+		style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(1.00f, 1.00f, 1.00f, 0.37f);
+		style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.22f, 0.60f, 0.82f, 0.00f);
+		style.Colors[ImGuiCol_TitleBg] = ImVec4(0.88f, 0.88f, 0.88f, 0.45f);
+		style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.82f, 0.82f, 0.82f, 0.90f);
+		style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.82f, 0.82f, 0.82f, 0.91f);
+		style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.53f, 0.53f, 0.53f, 0.67f);
+		style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.53f, 0.53f, 0.53f, 0.82f);
+		style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.00f, 0.00f, 0.00f, 0.15f);
+		style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.82f, 0.82f, 0.82f, 0.67f);
+		style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_ComboBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.99f);
+		style.Colors[ImGuiCol_CheckMark] = ImVec4(0.90f, 0.90f, 0.90f, 0.50f);
+		style.Colors[ImGuiCol_SliderGrab] = ImVec4(1.00f, 1.00f, 1.00f, 0.30f);
+		style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_Button] = ImVec4(0.82f, 0.82f, 0.82f, 0.67f);
+		style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.81f, 0.82f, 0.82f, 0.77f);
+		style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_Header] = ImVec4(0.22f, 0.60f, 0.82f, 0.50f);
+		style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.22f, 0.60f, 0.82f, 0.70f);
+		style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_Column] = ImVec4(0.82f, 0.82f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_ColumnHovered] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+		style.Colors[ImGuiCol_ColumnActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_ResizeGrip] = ImVec4(1.00f, 1.00f, 1.00f, 0.30f);
+		style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(1.00f, 1.00f, 1.00f, 0.60f);
+		style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.00f, 1.00f, 1.00f, 0.90f);
+		style.Colors[ImGuiCol_CloseButton] = ImVec4(0.53f, 0.53f, 0.53f, 1.00f);
+		style.Colors[ImGuiCol_CloseButtonHovered] = ImVec4(0.82f, 0.42f, 0.42f, 1.00f);
+		style.Colors[ImGuiCol_CloseButtonActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_PlotLines] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+		style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 0.65f, 0.22f, 0.00f);
+		style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.93f, 0.52f, 0.02f, 0.00f);
+		style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.92f, 0.82f, 0.00f);
+		style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
+		style.Colors[ImGuiCol_ModalWindowDarkening] = ImVec4(0.20f, 0.20f, 0.20f, 0.22f);
+	}
+
+	void initGUI(int _argc, char** _argv) {
+		m_showVideoWindow = true;
+
+		// Initialise GUI
+		imguiCreate();
+		setupGUIStyle();
+	}
+	
 	void initOpenCV(int _argc, char** _argv) {
 		
 		try {
@@ -177,86 +257,6 @@ class ShowGUI : public entry::AppI {
     	}
 	}
 
-	void setupGUIStyle() {
-
-		// Fonts
-		//ImGuiIO& io = ImGui::GetIO();
-		//io.Fonts->Clear();
-		//io.Fonts->AddFontDefault();
-		// io.Fonts->AddFontFromFileTTF("font/droidsans.ttf", 16);
-		// io.Fonts->AddFontFromFileTTF("font/chp-fire.ttf", 16);
-		// io.Fonts->AddFontFromFileTTF("font/roboto-regular.ttf", 16);
-		// io.Fonts->AddFontFromFileTTF("font/ruritania.ttf", 16);
-		// io.Fonts->AddFontFromFileTTF("font/signika-regular.ttf", 16);
-		//io.Fonts->Build();
-		//io.FontDefault = io.Fonts->Fonts[2];
-
-		// Style
-		ImGuiStyle& style = ImGui::GetStyle();
-		style.GrabRounding = 0;					// Radius of grabs corners rounding. Set to 0.0f to have rectangular slider grabs.
-		style.ScrollbarRounding = 2;			// Radius of grab corners for scrollbar
-		style.FrameRounding = 2;				// Radius of frame corners rounding. Set to 0.0f to have rectangular frame (used by most widgets).
-		style.WindowRounding = 2;				// Radius of window corners rounding. Set to 0.0f to have rectangular windows
-		style.ChildWindowRounding = 0;	        // Radius of child window corners rounding. Set to 0.0f to have rectangular windows
-		style.FramePadding = ImVec2(2,2); 		// Padding within a framed rectangle (used by most widgets)
-    	style.ItemSpacing = ImVec2(1,1);  		// Horizontal and vertical spacing between widgets/lines
-    	style.ItemInnerSpacing = ImVec2(3,3);   // Horizontal and vertical spacing between within elements of a composed widget (e.g. a slider and its label)
-    	//style.IndentSpacing;              // Horizontal indentation when e.g. entering a tree node. Generally == (FontSize + FramePadding.x*2).
-    
-		// Colors
-		style.Colors[ImGuiCol_Text] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-		style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.84f, 0.84f, 0.84f, 1.00f);
-		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.59f, 0.59f, 0.59f, 0.90f);
-		style.Colors[ImGuiCol_ChildWindowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-		style.Colors[ImGuiCol_PopupBg] = ImVec4(0.05f, 0.05f, 0.10f, 0.90f);
-		style.Colors[ImGuiCol_Border] = ImVec4(0.70f, 0.70f, 0.70f, 0.65f);
-		style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.15f, 0.15f, 0.15f, 0.09f);
-		style.Colors[ImGuiCol_FrameBg] = ImVec4(0.78f, 0.80f, 0.80f, 0.30f);
-		style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(1.00f, 1.00f, 1.00f, 0.37f);
-		style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.22f, 0.60f, 0.82f, 0.00f);
-		style.Colors[ImGuiCol_TitleBg] = ImVec4(0.88f, 0.88f, 0.88f, 0.45f);
-		style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.82f, 0.82f, 0.82f, 0.90f);
-		style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.82f, 0.82f, 0.82f, 0.91f);
-		style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.53f, 0.53f, 0.53f, 0.67f);
-		style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.53f, 0.53f, 0.53f, 0.82f);
-		style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.00f, 0.00f, 0.00f, 0.15f);
-		style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.82f, 0.82f, 0.82f, 0.67f);
-		style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_ComboBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.99f);
-		style.Colors[ImGuiCol_CheckMark] = ImVec4(0.90f, 0.90f, 0.90f, 0.50f);
-		style.Colors[ImGuiCol_SliderGrab] = ImVec4(1.00f, 1.00f, 1.00f, 0.30f);
-		style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_Button] = ImVec4(0.82f, 0.82f, 0.82f, 0.67f);
-		style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.81f, 0.82f, 0.82f, 0.77f);
-		style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_Header] = ImVec4(0.22f, 0.60f, 0.82f, 0.50f);
-		style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.22f, 0.60f, 0.82f, 0.70f);
-		style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_Column] = ImVec4(0.82f, 0.82f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_ColumnHovered] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-		style.Colors[ImGuiCol_ColumnActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_ResizeGrip] = ImVec4(1.00f, 1.00f, 1.00f, 0.30f);
-		style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(1.00f, 1.00f, 1.00f, 0.60f);
-		style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.00f, 1.00f, 1.00f, 0.90f);
-		style.Colors[ImGuiCol_CloseButton] = ImVec4(0.53f, 0.53f, 0.53f, 1.00f);
-		style.Colors[ImGuiCol_CloseButtonHovered] = ImVec4(0.82f, 0.82f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_CloseButtonActive] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_PlotLines] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-		style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.00f, 0.65f, 0.22f, 0.00f);
-		style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.93f, 0.52f, 0.02f, 0.00f);
-		style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.92f, 0.82f, 0.00f);
-		style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.22f, 0.60f, 0.82f, 1.00f);
-		style.Colors[ImGuiCol_ModalWindowDarkening] = ImVec4(0.20f, 0.20f, 0.20f, 0.22f);
-	}
-
-	void initGUI(int _argc, char** _argv) {
-		m_showVideoWindow = true;
-
-		// Initialise GUI
-		imguiCreate();
-		setupGUIStyle();
-	}
-
 	void initBgfx(int _argc, char** _argv) {
 		
 		Args args(_argc, _argv);
@@ -293,7 +293,7 @@ class ShowGUI : public entry::AppI {
 			m_cameraInfo.frame_size.height,					// height
 			false, 											// no mip-maps
 			1,												// number of layers
-			bgfx::TextureFormat::Enum::RGB8,				// format
+			bgfx::TextureFormat::Enum::RGBA8,				// format
 			BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
 			nullptr											// mutable
 		);
@@ -303,6 +303,7 @@ class ShowGUI : public entry::AppI {
 
 	virtual int shutdown() override	{
 		imguiDestroy();
+		bgfx::destroyTexture(m_texRGB);
 		bgfx::shutdown();
 		return EXIT_SUCCESS;
 	}
@@ -328,7 +329,7 @@ class ShowGUI : public entry::AppI {
 			// Use debug font to print information about this example.
 			bgfx::dbgTextClear();
 
-			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: %s", m_progName.c_str());
+			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: Show Camera");
 			bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
 			bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
 
@@ -336,20 +337,25 @@ class ShowGUI : public entry::AppI {
 			bgfx::dbgTextPrintf(0, 5, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
 					stats->width, stats->height, stats->textWidth, stats->textHeight);
 
-			// Get the current camera frame and show it as a debug image
+			// Get the current camera frame and show on the GUIs windows
 			cv::Mat cameraFrame;
 			if (m_showVideoWindow && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
 				auto imageFrameType = cameraFrame.type();
 
-				bgfx::dbgTextPrintf(0, 6, 0x0f, "Camera frame %dx%d @%d fps (type: %s)",
-					m_cameraInfo.frame_size.width, m_cameraInfo.frame_size.height,
-					m_cameraInfo.fps, cvTypeToString(imageFrameType).c_str());
+				bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps",
+					m_cameraInfo.frame_size.width,
+					m_cameraInfo.frame_size.height,
+					m_cameraInfo.fps);
+
+				bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s)",
+					cameraFrame.cols, cameraFrame.rows,
+					cvTypeToString(imageFrameType).c_str());
 
 				{
 					// Make sure we are in the right format and convert to UMat
 					cv::UMat frameImage, rgbImage;
 					cameraFrame.convertTo(frameImage, CV_8UC3);
-					cv::cvtColor(frameImage, rgbImage, cv::COLOR_BGR2RGB);
+					cv::cvtColor(frameImage, rgbImage, cv::COLOR_BGR2RGBA);
 
 					// TODO: Operate on frameImage (UMat)
 
@@ -367,9 +373,10 @@ class ShowGUI : public entry::AppI {
 				if (cameraFrame.isContinuous()) {
 					bx::memCopy(m_imagePixels.data(), cameraFrame.data, imageSize);
 				} else {
+					// We need to copy one row at a time otherwise.
 					auto *p = m_imagePixels.data();
 					for(int32_t i  = 0; i < cameraFrame.rows; i++){
-						memcpy(p, cameraFrame.ptr(i), cameraFrame.cols*imagePitch);
+						memcpy(p, cameraFrame.ptr(i), imagePitch);
 						p += imagePitch;
 					}
 				}
@@ -401,13 +408,16 @@ class ShowGUI : public entry::AppI {
 							, uint16_t(m_height)
 							);
 
-					ImGui::Begin("Camera", &m_showVideoWindow,
-						ImVec2(0.0f, 0.0f),
-						ImGuiWindowFlags_AlwaysAutoResize); {
+					{
+						if (ImGui::Begin("Camera", &m_showVideoWindow,
+							ImGuiWindowFlags_AlwaysAutoResize
+							| ImGuiWindowFlags_NoScrollbar
+							| ImGuiWindowFlags_NoResize)) {
 
-							ImGui::Image((ImTextureID)(uintptr_t)m_texRGB.idx,
-								ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows));
-							
+								ImGui::Image((ImTextureID)(uintptr_t)m_texRGB.idx,
+									ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows));
+						}
+						
 						ImGui::End();
 					}
 
@@ -418,7 +428,6 @@ class ShowGUI : public entry::AppI {
 			// Advance to next frame. Rendering thread will be kicked to
 			// process submitted rendering primitives.
 			bgfx::frame();
-
 
 			// Quit
             if (inputGetKeyState(entry::Key::Esc)) {

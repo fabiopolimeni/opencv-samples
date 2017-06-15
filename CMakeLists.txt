@@ -25,6 +25,12 @@ include_directories(
     ${DEPS_BGFX_DIR}/bx/include)
 
 target_compile_definitions(bgfx PRIVATE "BGFX_CONFIG_RENDERER_OPENGL=41")
+if (MSVC)
+    target_compile_definitions(bgfx PRIVATE "BGFX_CONFIG_RENDERER_DIRECT3D11=1")
+    if (MSVC14 OR MSVC15)
+        target_compile_definitions(bgfx PRIVATE "BGFX_CONFIG_RENDERER_DIRECT3D12=1")
+    endif()
+endif()    
 
 # Add samples
 add_subdirectory(src/show_image)
