@@ -7,6 +7,7 @@
 
 #include "entry/entry.h"
 #include "entry/input.h"
+#include "entry/cmd.h"
 #include "common.h"
 #include "bgfx_utils.h"
 
@@ -172,8 +173,6 @@ class ShowGUI : public entry::AppI {
 	}
 
 	void initGUI(int _argc, char** _argv) {
-		m_showVideoWindow = true;
-
 		// Initialise GUI
 		imguiCreate();
 		setupGUIStyle();
@@ -283,8 +282,111 @@ class ShowGUI : public entry::AppI {
 			);
 	}
 
-	static void releaseImageMemory(void* ptr, void* userData) {
+	static void releaseImageMemory(void* _ptr, void* _userData) {
 		
+	}
+	
+	static bool toggle(uint32_t& _flags, const char* _name, uint32_t _bit, int _first, int _argc, char const* const* _argv)
+	{
+		if (0 == bx::strCmp(_argv[_first], _name) )
+		{
+			int arg = _first+1;
+			if (_argc > arg)
+			{
+				_flags &= ~_bit;
+				_flags |= bx::toBool(_argv[arg]) ? _bit : 0;
+			}
+			else
+			{
+				_flags ^= _bit;
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	static int cmdQuit(CmdContext* /*_context*/, void* _userData, int /*_argc*/, char const* const* /*_argv*/)
+	{
+		auto* _this = static_cast<ShowGUI*>(_userData);
+		_this->quit();
+
+		return EXIT_SUCCESS;
+	}
+
+	static int cmdShow(CmdContext* /*_context*/, void* _userData, int _argc, char const* const* _argv)
+	{
+		if (_argc > 1)
+		{
+			auto* _this = static_cast<ShowGUI*>(_userData);
+			if (0 == bx::strCmp(_argv[1], "camera")) {
+				_this->toggleState(SHOW_CAMERA);
+				return EXIT_SUCCESS;
+			}
+		}
+
+		return EXIT_FAILURE;
+	}
+
+	virtual void init(int _argc, char** _argv) override	{
+		initOpenCV(_argc, _argv);
+		initBgfx(_argc, _argv);
+		initGUI(_argc, _argv);
+
+		// Create the texture of the video to display
+		m_texRGBA = bgfx::createTexture2D(
+			m_cameraInfo.frame_size.width,					// width
+			m_cameraInfo.frame_size.height,					// height
+			false, 											// no mip-maps
+			1,												// number of layers
+			bgfx::TextureFormat::Enum::RGBA8,				// format
+			BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
+			nullptr											// mutable
+		);
+
+		// Create the textures for display the channels separately
+		for (auto& tex : m_texChannels) {
+			tex = bgfx::createTexture2D(
+				m_cameraInfo.frame_size.width,					// width
+				m_cameraInfo.frame_size.height,					// height
+				false, 											// no mip-maps
+				1,												// number of layers
+				bgfx::TextureFormat::Enum::RGBA8,				// format
+				BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
+				nullptr											// mutable
+			);
+		}
+
+		static const InputBinding bindings[] =
+		{
+			{ entry::Key::Esc, 	entry::Modifier::None,  		1, NULL, "quit" },
+			{ entry::Key::KeyD,	entry::Modifier::LeftCtrl,  	1, NULL, "show camera" },
+			{ entry::Key::KeyD, entry::Modifier::RightShift,	1, NULL, "show camera" }
+		};
+
+		// Add bindings and commands
+		cmdAdd("quit", cmdQuit, this);
+		cmdAdd("show", cmdShow, this);
+
+		inputAddBindings("showgui_bindings", bindings);
+
+		// Set initial states
+		addState(SHOW_CAMERA);
+
+		m_timeOffset = bx::getHPCounter();
+	}
+
+	virtual int shutdown() override	{
+		imguiDestroy();
+		
+		bgfx::destroyTexture(m_texRGBA);
+		for (auto tex : m_texChannels) {
+			bgfx::destroyTexture(tex);
+		}
+
+		bgfx::shutdown();
+		return EXIT_SUCCESS;
 	}
 
 	static void updateImageToTexture(const cv::Mat& image, bgfx::TextureHandle texture) {
@@ -323,52 +425,11 @@ class ShowGUI : public entry::AppI {
 		);
 	}
 
-	virtual void init(int _argc, char** _argv) override	{
-		initOpenCV(_argc, _argv);
-		initBgfx(_argc, _argv);
-		initGUI(_argc, _argv);
-
-		// Create the texture of the video to display
-		m_texRGBA = bgfx::createTexture2D(
-			m_cameraInfo.frame_size.width,					// width
-			m_cameraInfo.frame_size.height,					// height
-			false, 											// no mip-maps
-			1,												// number of layers
-			bgfx::TextureFormat::Enum::RGBA8,				// format
-			BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
-			nullptr											// mutable
-		);
-
-		// Create the textures for display the channels separately
-		for (auto& tex : m_texChannels) {
-			tex = bgfx::createTexture2D(
-				m_cameraInfo.frame_size.width,					// width
-				m_cameraInfo.frame_size.height,					// height
-				false, 											// no mip-maps
-				1,												// number of layers
-				bgfx::TextureFormat::Enum::RGBA8,				// format
-				BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
-				nullptr											// mutable
-			);
-		}
-
-		m_timeOffset = bx::getHPCounter();
-	}
-
-	virtual int shutdown() override	{
-		imguiDestroy();
-		
-		bgfx::destroyTexture(m_texRGBA);
-		for (auto tex : m_texChannels) {
-			bgfx::destroyTexture(tex);
-		}
-
-		bgfx::shutdown();
-		return EXIT_SUCCESS;
-	}
-
 	virtual bool update() override	{
-		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
+
+		if (!hasState(EXIT_REQUEST) &&
+			!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
+
             int64_t now = bx::getHPCounter();
 			static int64_t last = now;
 			const int64_t frameTime = now - last;
@@ -398,7 +459,7 @@ class ShowGUI : public entry::AppI {
 
 			// Get the current camera frame and show on the GUIs windows
 			cv::Mat cameraFrame;
-			if (m_showVideoWindow && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
+			if (hasState(SHOW_CAMERA) && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
 				auto imageFrameType = cameraFrame.type();
 
 				bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps",
@@ -469,65 +530,89 @@ class ShowGUI : public entry::AppI {
 							);
 
 					{
-						if (ImGui::Begin("Camera", &m_showVideoWindow,
+						bool showVideoWindow = hasState(SHOW_CAMERA);
+						if (ImGui::Begin("Camera", &showVideoWindow,
 							uint32_t(ImGuiWindowFlags_AlwaysAutoResize
 							| ImGuiWindowFlags_NoScrollbar
 							| ImGuiWindowFlags_NoResize))) {
 
-							auto frameSize = ImVec2(
-								(float)cameraFrame.cols,
-								(float)cameraFrame.rows);
-							
-							// Show the main frame
-							ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
-							
-							// Show frame's channels
-							ImGui::BeginGroup();
-							{
-								for (const auto& texChannel : m_texChannels) {
-									auto frameChannelSize = ImVec2(
-										frameSize.x * .332f,
-										frameSize.y * .332f);
-									
-									ImGui::Image(
-										(ImTextureID)(uintptr_t)texChannel.idx,
-										frameChannelSize);
-									
-									ImGui::SameLine();
+								auto frameSize = ImVec2(
+									(float)cameraFrame.cols,
+									(float)cameraFrame.rows);
+								
+								// Show the main frame
+								ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
+								
+								// Show frame's channels
+								ImGui::BeginGroup();
+								{
+									for (const auto& texChannel : m_texChannels) {
+										auto frameChannelSize = ImVec2(
+											frameSize.x * .332f,
+											frameSize.y * .332f);
+										
+										ImGui::Image(
+											(ImTextureID)(uintptr_t)texChannel.idx,
+											frameChannelSize);
+										
+										ImGui::SameLine();
+									}
+									ImGui::EndGroup();
 								}
-								ImGui::EndGroup();
 							}
-						}
-						
+
 						ImGui::End();
+												
+						if(!showVideoWindow) {
+							removeState(SHOW_CAMERA);
+						}
 					}
 
 					imguiEndFrame();
 				}
 			}		
 
-			// Advance to next frame. Rendering thread will be kicked to
-			// process submitted rendering primitives.
+			// Advance to next frame. Rendering thread will be
+			//  kicked to process submitted rendering primitives.
 			bgfx::frame();
-
-			// Quit
-            if (inputGetKeyState(entry::Key::Esc)) {
-                return false;
-            }
-
-			uint8_t keyModifiers = inputGetModifiersState();
-
-			// Toggle windows
-			if (keyModifiers & entry::Modifier::LeftShift) {
-				if (inputGetKeyState(entry::Key::KeyD)) {
-					m_showVideoWindow = !m_showVideoWindow;
-				}
-			}
-
 			return true;
 		}
 
 		return false;
+	}
+
+	enum State {
+		NONE				= 0,
+		EXIT_REQUEST		= (1<<0),
+		SHOW_CAMERA			= (1<<1),
+		COLOR_SPACE_LAB		= (1<<2),
+		COLOR_SPACE_YoCrCb	= (1<<3),
+		COLOR_SPACE_HSV		= (1<<4)
+	};
+
+	void addState(State s) {
+		m_states |= (uint32_t)s;
+	}
+
+	void removeState(State s) {
+		m_states &= ~(uint32_t)s;
+	}
+
+	bool hasState(State s) {
+		return (m_states & (uint32_t)s);
+	}
+
+	void toggleState(State s) {
+		if (hasState(s)) {
+			removeState(s);
+		}
+		else {
+			addState(s);
+		}
+	}
+
+	void quit() {
+		addState(EXIT_REQUEST);
 	}
 
     entry::MouseState 		m_mouseState;
@@ -538,13 +623,12 @@ class ShowGUI : public entry::AppI {
 	cv::VideoCapture		m_videoCapture;
 	CameraInfo				m_cameraInfo;
 
+	uint32_t	m_states;
 	uint32_t    m_width;
 	uint32_t    m_height;
 	uint32_t    m_debug;
 	uint32_t    m_reset;
     int64_t     m_timeOffset;
-
-	bool		m_showVideoWindow;
 };
 
 ENTRY_IMPLEMENT_MAIN(ShowGUI);
