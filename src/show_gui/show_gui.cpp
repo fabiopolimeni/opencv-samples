@@ -282,31 +282,6 @@ class ShowGUI : public entry::AppI {
 			);
 	}
 
-	static void releaseImageMemory(void* _ptr, void* _userData) {
-		
-	}
-	
-	static bool toggle(uint32_t& _flags, const char* _name, uint32_t _bit, int _first, int _argc, char const* const* _argv)
-	{
-		if (0 == bx::strCmp(_argv[_first], _name) )
-		{
-			int arg = _first+1;
-			if (_argc > arg)
-			{
-				_flags &= ~_bit;
-				_flags |= bx::toBool(_argv[arg]) ? _bit : 0;
-			}
-			else
-			{
-				_flags ^= _bit;
-			}
-
-			return true;
-		}
-
-		return false;
-	}
-
 	static int cmdQuit(CmdContext* /*_context*/, void* _userData, int /*_argc*/, char const* const* /*_argv*/)
 	{
 		auto* _this = static_cast<ShowGUI*>(_userData);
@@ -320,8 +295,29 @@ class ShowGUI : public entry::AppI {
 		if (_argc > 1)
 		{
 			auto* _this = static_cast<ShowGUI*>(_userData);
+
 			if (0 == bx::strCmp(_argv[1], "camera")) {
 				_this->toggleState(SHOW_CAMERA);
+				return EXIT_SUCCESS;
+			}
+			else if (0 == bx::strCmp(_argv[1], "lab")) {
+				_this->removeState(COLOR_SPACE_ALL);
+				_this->addState(COLOR_SPACE_Lab);
+				return EXIT_SUCCESS;
+			}
+			else if (0 == bx::strCmp(_argv[1], "hsv")) {
+				_this->removeState(COLOR_SPACE_ALL);
+				_this->toggleState(COLOR_SPACE_HSV);
+				return EXIT_SUCCESS;
+			}
+			else if (0 == bx::strCmp(_argv[1], "ycrcb")) {
+				_this->removeState(COLOR_SPACE_ALL);
+				_this->toggleState(COLOR_SPACE_YCrCb);
+				return EXIT_SUCCESS;
+			}
+			else if (0 == bx::strCmp(_argv[1], "rgb")) {
+				_this->removeState(COLOR_SPACE_ALL);
+				_this->toggleState(COLOR_SPACE_RGB);
 				return EXIT_SUCCESS;
 			}
 		}
@@ -360,9 +356,13 @@ class ShowGUI : public entry::AppI {
 
 		static const InputBinding bindings[] =
 		{
-			{ entry::Key::Esc, 	entry::Modifier::None,  		1, NULL, "quit" },
-			{ entry::Key::KeyD,	entry::Modifier::LeftCtrl,  	1, NULL, "show camera" },
-			{ entry::Key::KeyD, entry::Modifier::RightShift,	1, NULL, "show camera" }
+			{ entry::Key::Esc, 	entry::Modifier::None,  		1, NULL, "quit" 		},
+			{ entry::Key::KeyD,	entry::Modifier::LeftCtrl,  	1, NULL, "show camera" 	},
+			{ entry::Key::KeyD, entry::Modifier::RightCtrl,		1, NULL, "show camera" 	},
+			{ entry::Key::KeyR,	entry::Modifier::None,  		1, NULL, "show rgb" 	},
+			{ entry::Key::KeyY,	entry::Modifier::None,  		1, NULL, "show ycrcb" 	},
+			{ entry::Key::KeyH,	entry::Modifier::None,  		1, NULL, "show hsv" 	},
+			{ entry::Key::KeyL,	entry::Modifier::None,  		1, NULL, "show lab"		}
 		};
 
 		// Add bindings and commands
@@ -372,6 +372,7 @@ class ShowGUI : public entry::AppI {
 		inputAddBindings("showgui_bindings", bindings);
 
 		// Set initial states
+		m_states = NONE;
 		addState(SHOW_CAMERA);
 
 		m_timeOffset = bx::getHPCounter();
@@ -474,23 +475,43 @@ class ShowGUI : public entry::AppI {
 				cv::Mat frameChannels[3];
 				{
 					// Make sure we are in the right format and convert to UMat
-					cv::UMat bgr, lab, ycrcb, hsv, rgba;
+					cv::UMat bgr, colorSpace;
 					cameraFrame.convertTo(bgr, CV_8UC3);
 
-					// Operate on frameImage (UMat)
-					cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
-					cv::cvtColor(bgr, ycrcb, cv::COLOR_BGR2YCrCb);
-					cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
-					cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
+					// Pick the requested color space
+					std::string colorSpaceString = "RGB";
+					int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
+					if (hasState(COLOR_SPACE_HSV)) {
+						colorSpaceCode = cv::COLOR_BGR2HSV;
+						colorSpaceString = "HSV";
+					}
+					else if (hasState(COLOR_SPACE_YCrCb)) {
+						colorSpaceCode = cv::COLOR_BGR2YCrCb;
+						colorSpaceString = "YCrCb";
+					}
+					else if (hasState(COLOR_SPACE_Lab)) {
+						colorSpaceCode = cv::COLOR_BGR2Lab;
+						colorSpaceString = "Lab";
+					}
 
-					// Extract the channels
+					bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
+						colorSpaceString.c_str());
+
+					// Convert camera input to the requested color space
+					cv::cvtColor(bgr, colorSpace, colorSpaceCode);
+
+					// Separate the color space channels
 					std::vector<cv::UMat> channels;
-					cv::split(hsv, channels);
+					cv::split(colorSpace, channels);
 
-					// Convert back to Mat
+					cv::UMat rgba;
+
+					// Convert bgr to rgba and back to Mat
+					// that is image data can be transferred to GPU
+					cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
 					cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
 
-					cv::UMat alphaOne = cv::UMat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
+					//cv::UMat alphaOne = cv::UMat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
 					for (auto i = 0; i < channels.size(); ++i) {
 						// Convert single channel image into RGBA.
 						// This is a required step because ImGUI is not capable
@@ -585,9 +606,15 @@ class ShowGUI : public entry::AppI {
 		NONE				= 0,
 		EXIT_REQUEST		= (1<<0),
 		SHOW_CAMERA			= (1<<1),
-		COLOR_SPACE_LAB		= (1<<2),
-		COLOR_SPACE_YoCrCb	= (1<<3),
-		COLOR_SPACE_HSV		= (1<<4)
+		COLOR_SPACE_Lab		= (1<<2),
+		COLOR_SPACE_YCrCb	= (1<<3),
+		COLOR_SPACE_HSV		= (1<<4),
+		COLOR_SPACE_RGB		= (1<<5),
+		COLOR_SPACE_ALL		=
+			  COLOR_SPACE_Lab		
+			| COLOR_SPACE_YCrCb
+			| COLOR_SPACE_HSV		
+			| COLOR_SPACE_RGB
 	};
 
 	void addState(State s) {
