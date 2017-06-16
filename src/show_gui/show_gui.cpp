@@ -330,7 +330,7 @@ class ShowGUI : public entry::AppI {
 		initBgfx(_argc, _argv);
 		initGUI(_argc, _argv);
 
-		// Create the texture of the video to display
+		// Create the texture to hold camera input image
 		m_texRGBA = bgfx::createTexture2D(
 			m_cameraInfo.frame_size.width,					// width
 			m_cameraInfo.frame_size.height,					// height
@@ -341,7 +341,7 @@ class ShowGUI : public entry::AppI {
 			nullptr											// mutable
 		);
 
-		// Create the textures for display the channels separately
+		// Create textures for displaing the channels separately
 		for (auto& tex : m_texChannels) {
 			tex = bgfx::createTexture2D(
 				m_cameraInfo.frame_size.width,					// width
@@ -396,7 +396,7 @@ class ShowGUI : public entry::AppI {
 		size_t imageSize = image.total() * image.elemSize();
 		size_t imagePitch = image.cols * image.elemSize();
 	
-		// !!ATTENTION!!: No thread-safe!
+		// !!ATTENTION!!: Not thread-safe!
 		static std::vector<uint8_t> pixels;
 		pixels.resize(imageSize);
 		
@@ -408,7 +408,7 @@ class ShowGUI : public entry::AppI {
 			// We need to copy one row at a time otherwise.
 			auto *p = pixels.data();
 			for(int32_t i  = 0; i < image.rows; i++){
-				memcpy(p, image.ptr(i), imagePitch);
+				bx::memCopy(p, image.ptr(i), imagePitch);
 				p += imagePitch;
 			}
 		}
