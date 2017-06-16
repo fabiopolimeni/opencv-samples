@@ -533,8 +533,6 @@ class ShowGUI : public entry::AppI {
     entry::MouseState 		m_mouseState;
 	bgfx::TextureHandle		m_texRGBA;
 	bgfx::TextureHandle		m_texChannels[3];
-	std::vector<uint8_t>	m_imagePixels;
-	std::vector<uint8_t>	m_imageChannels[3];
 	std::string				m_progName;
 
 	cv::VideoCapture		m_videoCapture;
