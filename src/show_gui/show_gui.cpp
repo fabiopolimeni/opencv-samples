@@ -3,13 +3,14 @@
 #include <bx/string.h>
 #include <bgfx/bgfx.h>
 #include <bx/crtimpl.h>
-#include <imgui/imgui.h>
 
 #include "entry/entry.h"
 #include "entry/input.h"
 #include "entry/cmd.h"
+#include "imgui/imgui.h"
 #include "common.h"
 #include "bgfx_utils.h"
+#include "imgui_ext.h"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -377,6 +378,7 @@ class ShowGUI : public entry::AppI {
 		m_states = NONE;
 		addState(SHOW_CAMERA);
 
+		bx::memSet(m_selectedColor, 0x0, sizeof(m_selectedColor));
 		m_timeOffset = bx::getHPCounter();
 	}
 
@@ -566,20 +568,27 @@ class ShowGUI : public entry::AppI {
 								// Show the main frame
 								ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
 								
-								// Show frame's channels
 								ImGui::BeginGroup();
 								{
-									for (const auto& texChannel : m_texChannels) {
-										auto frameChannelSize = ImVec2(
+									auto frameChannelSize = ImVec2(
 											frameSize.x * .332f,
 											frameSize.y * .332f);
-										
+
+									// Show frame's channels
+									for (const auto& texChannel : m_texChannels) {										
 										ImGui::Image(
 											(ImTextureID)(uintptr_t)texChannel.idx,
 											frameChannelSize);
 										
 										ImGui::SameLine();
 									}
+
+									ImGui::NewLine();
+
+									// Color picker
+									ImGui::ColorEdit3("Color Mask", m_selectedColor,
+										ImGuiColorEditFlags_NoSliders);
+
 									ImGui::EndGroup();
 								}
 							}
@@ -651,6 +660,8 @@ class ShowGUI : public entry::AppI {
 
 	cv::VideoCapture		m_videoCapture;
 	CameraInfo				m_cameraInfo;
+
+	float					m_selectedColor[3];
 
 	uint32_t	m_states;
 	uint32_t    m_width;

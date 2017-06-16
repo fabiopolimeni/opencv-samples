@@ -1,6 +1,7 @@
 set(SAMPLE_NAME show_gui)
 
-add_executable(${SAMPLE_NAME} ${SAMPLE_NAME}.cpp)
+add_executable(${SAMPLE_NAME} ${SAMPLE_NAME}.cpp imgui_ext.cpp)
+target_include_directories(${SAMPLE_NAME} PRIVATE .)
 
 # bgfx
 target_link_libraries(${SAMPLE_NAME} bgfx bimg bx ib-compress ocornut-imgui example-common)
