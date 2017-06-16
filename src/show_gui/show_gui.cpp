@@ -362,7 +362,9 @@ class ShowGUI : public entry::AppI {
 			{ entry::Key::KeyR,	entry::Modifier::None,  		1, NULL, "show rgb" 	},
 			{ entry::Key::KeyY,	entry::Modifier::None,  		1, NULL, "show ycrcb" 	},
 			{ entry::Key::KeyH,	entry::Modifier::None,  		1, NULL, "show hsv" 	},
-			{ entry::Key::KeyL,	entry::Modifier::None,  		1, NULL, "show lab"		}
+			{ entry::Key::KeyL,	entry::Modifier::None,  		1, NULL, "show lab"		},
+
+			INPUT_BINDING_END
 		};
 
 		// Add bindings and commands
