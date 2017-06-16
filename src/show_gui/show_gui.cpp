@@ -283,7 +283,47 @@ class ShowGUI : public entry::AppI {
 			);
 	}
 
-	void init(int _argc, char** _argv) override	{
+	static void releaseImageMemory(void* ptr, void* userData) {
+		
+	}
+
+	static void updateImageToTexture(const cv::Mat& image, bgfx::TextureHandle texture) {
+		size_t imageSize = image.total() * image.elemSize();
+		size_t imagePitch = image.cols * image.elemSize();
+	
+		// !!ATTENTION!!: No thread-safe!
+		static std::vector<uint8_t> pixels;
+		pixels.resize(imageSize);
+		
+		// If the grabbed frame is continuous in memory,
+		// then copying pixels is straight forward.
+		if (image.isContinuous()) {
+			bx::memCopy(pixels.data(), image.data, imageSize);
+		} else {
+			// We need to copy one row at a time otherwise.
+			auto *p = pixels.data();
+			for(int32_t i  = 0; i < image.rows; i++){
+				memcpy(p, image.ptr(i), imagePitch);
+				p += imagePitch;
+			}
+		}
+		
+		// Data will be free by bgfx once it has finished with it
+		auto* imageMem = bgfx::copy(pixels.data(), uint32_t(imageSize));
+		
+		// Copy camera frame into the texture
+		bgfx::updateTexture2D(
+			texture,	// texture handle
+			0, 0, 		// mip, layer
+			0, 0,		// start x, y
+			image.cols,	// width
+			image.rows,	// height
+			imageMem,	// memory
+			imagePitch	// pitch
+		);
+	}
+
+	virtual void init(int _argc, char** _argv) override	{
 		initOpenCV(_argc, _argv);
 		initBgfx(_argc, _argv);
 		initGUI(_argc, _argv);
@@ -306,7 +346,7 @@ class ShowGUI : public entry::AppI {
 				m_cameraInfo.frame_size.height,					// height
 				false, 											// no mip-maps
 				1,												// number of layers
-				bgfx::TextureFormat::Enum::R8,					// format
+				bgfx::TextureFormat::Enum::RGBA8,				// format
 				BGFX_TEXTURE_U_CLAMP | BGFX_TEXTURE_V_CLAMP,	// flags
 				nullptr											// mutable
 			);
@@ -317,7 +357,12 @@ class ShowGUI : public entry::AppI {
 
 	virtual int shutdown() override	{
 		imguiDestroy();
+		
 		bgfx::destroyTexture(m_texRGBA);
+		for (auto tex : m_texChannels) {
+			bgfx::destroyTexture(tex);
+		}
+
 		bgfx::shutdown();
 		return EXIT_SUCCESS;
 	}
@@ -328,13 +373,13 @@ class ShowGUI : public entry::AppI {
 			static int64_t last = now;
 			const int64_t frameTime = now - last;
 			last = now;
-			const double freq = double(bx::getHPFrequency() );
+			const double freq = double(bx::getHPFrequency());
 			const double toMs = 1000.0/freq;
 
-			float time = (float)( (now-m_timeOffset)/double(bx::getHPFrequency() ) );
+			float time = (float)((now-m_timeOffset)/double(bx::getHPFrequency()));
 
 			// Set view 0 default viewport.
-			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height) );
+			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
 
 			// This dummy draw call is here to make sure that view 0 is cleared
 			// if no other draw calls are submitted to view 0.
@@ -379,46 +424,36 @@ class ShowGUI : public entry::AppI {
 
 					// Extract the channels
 					std::vector<cv::UMat> channels;
-					cv::split(rgba, channels);
+					cv::split(hsv, channels);
 
 					// Convert back to Mat
 					cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
-					frameChannels[0] = channels[0].getMat(cv::ACCESS_READ).clone();
-					frameChannels[1] = channels[1].getMat(cv::ACCESS_READ).clone();
-					frameChannels[2] = channels[2].getMat(cv::ACCESS_READ).clone();
-				}
 
-				size_t imageSize = cameraFrame.total() * cameraFrame.elemSize();
-				size_t imagePitch = cameraFrame.cols * cameraFrame.elemSize();
+					cv::UMat alphaOne = cv::UMat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
+					for (auto i = 0; i < channels.size(); ++i) {
+						// Convert single channel image into RGBA.
+						// This is a required step because ImGUI is not capable
+						// of showing only one channel as grayscale image, nor has
+						// the ability to show an image with a custom shader.
+						cv::UMat grayRGBA;
+						cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
 
-				m_imagePixels.resize(imageSize);
+						// NOTE: cv::merge() doesn't support UMat
+						// cv::UMat grayChannels[] = {
+						// 	channels[i], channels[i], channels[i], alphaOne
+						// };
+						// cv::merge(grayChannels, 4, grayRGBA);
 
-				// If the grabbed frame is continuous in memory,
-				// then copying pixels is straight forward.
-				if (cameraFrame.isContinuous()) {
-					bx::memCopy(m_imagePixels.data(), cameraFrame.data, imageSize);
-				} else {
-					// We need to copy one row at a time otherwise.
-					auto *p = m_imagePixels.data();
-					for(int32_t i  = 0; i < cameraFrame.rows; i++){
-						memcpy(p, cameraFrame.ptr(i), imagePitch);
-						p += imagePitch;
+						// Convert to Mat to access data from the CPU
+						frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
 					}
 				}
-				
-				// Using makeRef to pass texture memory without copying.
-				const bgfx::Memory* imageMem = bgfx::makeRef(m_imagePixels.data(), imageSize);
 
-				// Copy camera frame into the texture
-				bgfx::updateTexture2D(
-					m_texRGBA,			// texture handle
-					0, 0, 				// mip, layer
-					0, 0,				// start x, y
-					cameraFrame.cols,	// width
-					cameraFrame.rows,	// height
-					imageMem,			// memory
-					imagePitch			// pitch
-				);
+				// Upload image data to textures
+				updateImageToTexture(cameraFrame, m_texRGBA);
+				updateImageToTexture(frameChannels[0], m_texChannels[0]);
+				updateImageToTexture(frameChannels[1], m_texChannels[1]);
+				updateImageToTexture(frameChannels[2], m_texChannels[2]);
 
 				// Show video
 				{
@@ -435,24 +470,27 @@ class ShowGUI : public entry::AppI {
 
 					{
 						if (ImGui::Begin("Camera", &m_showVideoWindow,
-							ImGuiWindowFlags_AlwaysAutoResize
+							uint32_t(ImGuiWindowFlags_AlwaysAutoResize
 							| ImGuiWindowFlags_NoScrollbar
-							| ImGuiWindowFlags_NoResize)) {
+							| ImGuiWindowFlags_NoResize))) {
 
 							auto frameSize = ImVec2(
 								(float)cameraFrame.cols,
 								(float)cameraFrame.rows);
+							
 							// Show the main frame
 							ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
+							
 							// Show frame's channels
 							ImGui::BeginGroup();
 							{
-								for (auto texChannel : m_texChannels) {
+								for (const auto& texChannel : m_texChannels) {
 									auto frameChannelSize = ImVec2(
 										frameSize.x * .332f,
 										frameSize.y * .332f);
+									
 									ImGui::Image(
-										(ImTextureID)(uintptr_t)m_texRGBA.idx,
+										(ImTextureID)(uintptr_t)texChannel.idx,
 										frameChannelSize);
 									
 									ImGui::SameLine();
