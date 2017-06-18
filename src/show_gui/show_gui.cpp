@@ -121,6 +121,7 @@ class ShowGUI : public entry::AppI {
 		style.ScrollbarRounding = 2;			// Radius of grab corners for scrollbar
 		style.FrameRounding = 2;				// Radius of frame corners rounding. Set to 0.0f to have rectangular frame (used by most widgets).
 		style.WindowRounding = 2;				// Radius of window corners rounding. Set to 0.0f to have rectangular windows
+		style.WindowPadding = ImVec2(2, 2);		// Padding within a window
 		style.ChildWindowRounding = 0;	        // Radius of child window corners rounding. Set to 0.0f to have rectangular windows
 		style.FramePadding = ImVec2(0,0); 		// Padding within a framed rectangle (used by most widgets)
     	style.ItemSpacing = ImVec2(1,1);  		// Horizontal and vertical spacing between widgets/lines
@@ -555,12 +556,58 @@ class ShowGUI : public entry::AppI {
 							);
 
 					{
+						// Store current GUI cursor position to compute where the
+						// mouse pointer is, w.r.t. the displayed camera image.
+						ImVec2 cursorPos = ImGui::GetCursorPos();
 						bool showVideoWindow = hasState(SHOW_CAMERA);
 						if (ImGui::Begin("Camera", &showVideoWindow,
-							uint32_t(ImGuiWindowFlags_AlwaysAutoResize
+							ImGuiWindowFlags_AlwaysAutoResize
 							| ImGuiWindowFlags_NoScrollbar
-							| ImGuiWindowFlags_NoResize))) {
+							| ImGuiWindowFlags_NoResize)) {
 
+								// Displayed image starts at current cursor
+								// screen position + window's content padding.
+								ImVec2 windowPos = ImGui::GetWindowPos();
+								ImVec2 windowPad = ImGui::GetStyle().WindowPadding;
+								cv::Point2i imageScreenStart(
+									int32_t(windowPos.x + cursorPos.x),
+									int32_t(windowPos.y + cursorPos.y + windowPad.y)
+								);
+
+								cv::Point2i currentMousePos(
+									m_mouseState.m_mx, m_mouseState.m_my
+								);
+
+								// Mouse position in displayed frame' space
+								cv::Point2i mouseAtPixel = currentMousePos - imageScreenStart;
+								cv::Rect imageROI = cv::Rect(0, 0, cameraFrame.cols, cameraFrame.rows);
+								if (imageROI.contains(mouseAtPixel)) {
+									
+									// Color at pixel
+									cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
+										mouseAtPixel.y, mouseAtPixel.x);
+
+									bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel R=%d G=%d B=%d at pos x=%d y=%d",
+										pixelColor[0], pixelColor[1], pixelColor[2],
+										mouseAtPixel.x, mouseAtPixel.y);
+
+									// If mouse right button is pressed, the color
+									// of this pixel is the one we want to filter.
+									if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
+										ImU32 u32Color = (pixelColor[0])
+											| (pixelColor[1] << 8)
+											| (pixelColor[2] << 16)
+											| (0xff << 24);
+										
+										ImVec4 floatColor = ImGui::ColorConvertU32ToFloat4(u32Color);
+
+										m_selectedColor[0] = floatColor.x;
+										m_selectedColor[1] = floatColor.y;
+										m_selectedColor[2] = floatColor.z;
+									}
+								}
+
+								// Displayed camera frame' size
 								auto frameSize = ImVec2(
 									(float)cameraFrame.cols,
 									(float)cameraFrame.rows);
@@ -568,6 +615,12 @@ class ShowGUI : public entry::AppI {
 								// Show the main frame
 								ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
 								
+								// Color picker
+								ImGui::ColorEdit3("", m_selectedColor,
+									ImGuiColorEditFlags_NoSliders
+									| ImGuiColorEditFlags_NoPicker
+									| ImGuiColorEditFlags_NoOptions);
+
 								ImGui::BeginGroup();
 								{
 									auto frameChannelSize = ImVec2(
@@ -582,12 +635,6 @@ class ShowGUI : public entry::AppI {
 										
 										ImGui::SameLine();
 									}
-
-									ImGui::NewLine();
-
-									// Color picker
-									ImGui::ColorEdit3("Color Mask", m_selectedColor,
-										ImGuiColorEditFlags_NoSliders);
 
 									ImGui::EndGroup();
 								}
