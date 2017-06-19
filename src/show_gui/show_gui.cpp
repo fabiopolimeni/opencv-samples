@@ -181,7 +181,6 @@ class ShowGUI : public entry::AppI {
 	}
 	
 	void initOpenCV(int _argc, char** _argv) {
-		
 		try {
 			std::string options =
 				"{help h usage| |Program usage}"
@@ -260,7 +259,6 @@ class ShowGUI : public entry::AppI {
 	}
 
 	void initBgfx(int _argc, char** _argv) {
-		
 		Args args(_argc, _argv);
         m_progName = (bx::baseName(_argv[0]));
 
@@ -281,7 +279,7 @@ class ShowGUI : public entry::AppI {
 			, 0x303030ff
 			, 1.0f
 			, 0
-			);
+		);
 	}
 
 	static int cmdQuit(CmdContext* /*_context*/, void* _userData, int /*_argc*/, char const* const* /*_argv*/)
@@ -432,230 +430,267 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual bool update() override	{
+		try {
+			if (!hasState(EXIT_REQUEST) &&
+				!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
 
-		if (!hasState(EXIT_REQUEST) &&
-			!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
+				int64_t now = bx::getHPCounter();
+				static int64_t last = now;
+				const int64_t frameTime = now - last;
+				last = now;
+				const double freq = double(bx::getHPFrequency());
+				const double toMs = 1000.0/freq;
 
-            int64_t now = bx::getHPCounter();
-			static int64_t last = now;
-			const int64_t frameTime = now - last;
-			last = now;
-			const double freq = double(bx::getHPFrequency());
-			const double toMs = 1000.0/freq;
+				float time = (float)((now-m_timeOffset)/double(bx::getHPFrequency()));
 
-			float time = (float)((now-m_timeOffset)/double(bx::getHPFrequency()));
+				// Set view 0 default viewport.
+				bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
 
-			// Set view 0 default viewport.
-			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
+				// This dummy draw call is here to make sure that view 0 is cleared
+				// if no other draw calls are submitted to view 0.
+				bgfx::touch(0);
 
-			// This dummy draw call is here to make sure that view 0 is cleared
-			// if no other draw calls are submitted to view 0.
-			bgfx::touch(0);
+				// Use debug font to print information about this example.
+				bgfx::dbgTextClear();
 
-			// Use debug font to print information about this example.
-			bgfx::dbgTextClear();
+				bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: Show Camera");
+				bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
+				bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
 
-			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: Show Camera");
-			bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
-			bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
+				const bgfx::Stats* stats = bgfx::getStats();
+				bgfx::dbgTextPrintf(0, 5, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
+						stats->width, stats->height, stats->textWidth, stats->textHeight);
 
-			const bgfx::Stats* stats = bgfx::getStats();
-			bgfx::dbgTextPrintf(0, 5, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
-					stats->width, stats->height, stats->textWidth, stats->textHeight);
+				// Get the current camera frame and show on the GUIs windows
+				cv::Mat cameraFrame;
+				if (hasState(SHOW_CAMERA) && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
+					auto imageFrameType = cameraFrame.type();
 
-			// Get the current camera frame and show on the GUIs windows
-			cv::Mat cameraFrame;
-			if (hasState(SHOW_CAMERA) && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
-				auto imageFrameType = cameraFrame.type();
+					bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps",
+						m_cameraInfo.frame_size.width,
+						m_cameraInfo.frame_size.height,
+						m_cameraInfo.fps);
 
-				bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps",
-					m_cameraInfo.frame_size.width,
-					m_cameraInfo.frame_size.height,
-					m_cameraInfo.fps);
+					bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s)",
+						cameraFrame.cols, cameraFrame.rows,
+						cvTypeToString(imageFrameType).c_str());
 
-				bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s)",
-					cameraFrame.cols, cameraFrame.rows,
-					cvTypeToString(imageFrameType).c_str());
-
-				cv::Mat frameChannels[3];
-				{
-					// Make sure we are in the right format and convert to UMat
-					cv::UMat bgr, colorSpace;
-					cameraFrame.convertTo(bgr, CV_8UC3);
-
-					// Pick the requested color space
-					std::string colorSpaceString = "RGB";
-					int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
-					if (hasState(COLOR_SPACE_HSV)) {
-						colorSpaceCode = cv::COLOR_BGR2HSV;
-						colorSpaceString = "HSV";
-					}
-					else if (hasState(COLOR_SPACE_YCrCb)) {
-						colorSpaceCode = cv::COLOR_BGR2YCrCb;
-						colorSpaceString = "YCrCb";
-					}
-					else if (hasState(COLOR_SPACE_Lab)) {
-						colorSpaceCode = cv::COLOR_BGR2Lab;
-						colorSpaceString = "Lab";
-					}
-
-					bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
-						colorSpaceString.c_str());
-
-					// Convert camera input to the requested color space
-					cv::cvtColor(bgr, colorSpace, colorSpaceCode);
-
-					// Separate the color space channels
-					std::vector<cv::UMat> channels;
-					cv::split(colorSpace, channels);
-
-					cv::UMat rgba;
-
-					// Convert bgr to rgba and back to Mat
-					// that is image data can be transferred to GPU
-					cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
-					cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
-
-					//cv::UMat alphaOne = cv::UMat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
-					for (auto i = 0; i < channels.size(); ++i) {
-						// Convert single channel image into RGBA.
-						// This is a required step because ImGUI is not capable
-						// of showing only one channel as grayscale image, nor has
-						// the ability to show an image with a custom shader.
-						cv::UMat grayRGBA;
-						cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
-
-						// NOTE: cv::merge() doesn't support UMat
-						// cv::UMat grayChannels[] = {
-						// 	channels[i], channels[i], channels[i], alphaOne
-						// };
-						// cv::merge(grayChannels, 4, grayRGBA);
-
-						// Convert to Mat to access data from the CPU
-						frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
-					}
-				}
-
-				// Upload image data to textures
-				updateImageToTexture(cameraFrame, m_texRGBA);
-				updateImageToTexture(frameChannels[0], m_texChannels[0]);
-				updateImageToTexture(frameChannels[1], m_texChannels[1]);
-				updateImageToTexture(frameChannels[2], m_texChannels[2]);
-
-				// Show video
-				{
-					// Draw UI
-					imguiBeginFrame(m_mouseState.m_mx
-							, m_mouseState.m_my
-							, (m_mouseState.m_buttons[entry::MouseButton::Left] ? IMGUI_MBUT_LEFT : 0)
-							| (m_mouseState.m_buttons[entry::MouseButton::Right] ? IMGUI_MBUT_RIGHT : 0)
-							| (m_mouseState.m_buttons[entry::MouseButton::Middle] ? IMGUI_MBUT_MIDDLE : 0)
-							, m_mouseState.m_mz
-							, uint16_t(m_width)
-							, uint16_t(m_height)
-							);
-
+					cv::Mat colorSpaceFrame;
+					cv::Mat frameChannels[3];
 					{
+						// Pick the requested color space
+						std::string colorSpaceString = "RGB";
+						int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
+						if (hasState(COLOR_SPACE_HSV)) {
+							colorSpaceCode = cv::COLOR_BGR2HSV;
+							colorSpaceString = "HSV";
+						}
+						else if (hasState(COLOR_SPACE_YCrCb)) {
+							colorSpaceCode = cv::COLOR_BGR2YCrCb;
+							colorSpaceString = "YCrCb";
+						}
+						else if (hasState(COLOR_SPACE_Lab)) {
+							colorSpaceCode = cv::COLOR_BGR2Lab;
+							colorSpaceString = "Lab";
+						}
+
+						bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
+							colorSpaceString.c_str());
+						
+						// Make sure we are in the right format and convert to UMat
+						cv::UMat bgr, colorSpaceImage;
+						cameraFrame.convertTo(bgr, CV_8UC3);
+
+						// Convert camera input to the requested color space
+						cv::cvtColor(bgr, colorSpaceImage, colorSpaceCode);
+
+						// Separate the color space channels
+						std::vector<cv::UMat> channels;
+						cv::split(colorSpaceImage, channels);
+
+						// Convert bgr to rgba and back to Mat
+						// that is image data can be transferred to GPU
+						cv::UMat rgba;
+						cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
+						cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
+
+						for (auto i = 0; i < channels.size(); ++i) {
+							// Convert single channel image into RGBA.
+							// This is a required step because ImGUI is not capable
+							// of showing only one channel as grayscale image, nor has
+							// the ability to show an image with a custom shader.
+							cv::UMat grayRGBA;
+							cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
+
+							// Convert to Mat to access data from the CPU
+							frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
+						}
+
+						// Merge channels into a single image
+						cv::Mat alphaOne = cv::Mat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
+						cv::Mat grayChannels[] = {
+							channels[0].getMat(cv::ACCESS_READ).clone(),
+							channels[1].getMat(cv::ACCESS_READ).clone(),
+							channels[2].getMat(cv::ACCESS_READ).clone(),
+							alphaOne
+						};
+						
+						cv::merge(grayChannels, 4, colorSpaceFrame);
+					}
+
+					// Show video
+					{
+						// Draw UI
+						imguiBeginFrame(m_mouseState.m_mx
+								, m_mouseState.m_my
+								, (m_mouseState.m_buttons[entry::MouseButton::Left] ? IMGUI_MBUT_LEFT : 0)
+								| (m_mouseState.m_buttons[entry::MouseButton::Right] ? IMGUI_MBUT_RIGHT : 0)
+								| (m_mouseState.m_buttons[entry::MouseButton::Middle] ? IMGUI_MBUT_MIDDLE : 0)
+								, m_mouseState.m_mz
+								, uint16_t(m_width)
+								, uint16_t(m_height)
+								);
+						
 						// Store current GUI cursor position to compute where the
 						// mouse pointer is, w.r.t. the displayed camera image.
 						ImVec2 cursorPos = ImGui::GetCursorPos();
 						bool showVideoWindow = hasState(SHOW_CAMERA);
+						
 						if (ImGui::Begin("Camera", &showVideoWindow,
 							ImGuiWindowFlags_AlwaysAutoResize
 							| ImGuiWindowFlags_NoScrollbar
 							| ImGuiWindowFlags_NoResize)) {
-
-								// Displayed image starts at current cursor
-								// screen position + window's content padding.
-								ImVec2 windowPos = ImGui::GetWindowPos();
-								ImVec2 windowPad = ImGui::GetStyle().WindowPadding;
-								cv::Point2i imageScreenStart(
-									int32_t(windowPos.x + cursorPos.x),
-									int32_t(windowPos.y + cursorPos.y + windowPad.y)
+							
+							// Displayed image starts at current cursor
+							// screen position + window's content padding.
+							ImVec2 windowPos = ImGui::GetWindowPos();
+							ImVec2 windowPad = ImGui::GetStyle().WindowPadding;
+							
+							cv::Point2i imageScreenStart(
+								int32_t(windowPos.x + cursorPos.x),
+								int32_t(windowPos.y + cursorPos.y + windowPad.y)
+							);
+							
+							cv::Point2i currentMousePos(
+								m_mouseState.m_mx, m_mouseState.m_my
+							);
+							
+							// Mouse position in displayed frame' space
+							cv::Point2i mouseAtPixel = currentMousePos - imageScreenStart;
+							cv::Rect imageROI = cv::Rect(0, 0, cameraFrame.cols, cameraFrame.rows);
+							
+							if (imageROI.contains(mouseAtPixel)) {
+								// Color at pixel
+								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
+									mouseAtPixel.y, mouseAtPixel.x);
+							
+								bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel at (%d,%d) RGB=[%d %d %d]",
+									mouseAtPixel.x, mouseAtPixel.y,
+									pixelColor[0], pixelColor[1], pixelColor[2]
 								);
-
-								cv::Point2i currentMousePos(
-									m_mouseState.m_mx, m_mouseState.m_my
-								);
-
-								// Mouse position in displayed frame' space
-								cv::Point2i mouseAtPixel = currentMousePos - imageScreenStart;
-								cv::Rect imageROI = cv::Rect(0, 0, cameraFrame.cols, cameraFrame.rows);
-								if (imageROI.contains(mouseAtPixel)) {
+							
+								// If mouse right button is pressed, the color
+								// of this pixel is the one we want to filter.
+								if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
+									ImU32 u32Color = (pixelColor[0])
+										| (pixelColor[1] << 8)
+										| (pixelColor[2] << 16)
+										| (0xff << 24);
 									
-									// Color at pixel
-									cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
-										mouseAtPixel.y, mouseAtPixel.x);
-
-									bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel R=%d G=%d B=%d at pos x=%d y=%d",
-										pixelColor[0], pixelColor[1], pixelColor[2],
-										mouseAtPixel.x, mouseAtPixel.y);
-
-									// If mouse right button is pressed, the color
-									// of this pixel is the one we want to filter.
-									if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
-										ImU32 u32Color = (pixelColor[0])
-											| (pixelColor[1] << 8)
-											| (pixelColor[2] << 16)
-											| (0xff << 24);
+									ImVec4 floatColor = ImGui::ColorConvertU32ToFloat4(u32Color);
+									m_selectedColor[0] = floatColor.x;
+									m_selectedColor[1] = floatColor.y;
+									m_selectedColor[2] = floatColor.z;
+									
+									{
+										// Create a mask, showing only those pixels of similar color
+										// as long as the user keep the mouse button presses.
+										cv::Vec4b colorSpacePixel = colorSpaceFrame.at<cv::Vec4b>(
+											mouseAtPixel.y, mouseAtPixel.x);
 										
-										ImVec4 floatColor = ImGui::ColorConvertU32ToFloat4(u32Color);
-
-										m_selectedColor[0] = floatColor.x;
-										m_selectedColor[1] = floatColor.y;
-										m_selectedColor[2] = floatColor.z;
-									}
-								}
-
-								// Displayed camera frame' size
-								auto frameSize = ImVec2(
-									(float)cameraFrame.cols,
-									(float)cameraFrame.rows);
-								
-								// Show the main frame
-								ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
-								
-								// Color picker
-								ImGui::ColorEdit3("", m_selectedColor,
-									ImGuiColorEditFlags_NoSliders
-									| ImGuiColorEditFlags_NoPicker
-									| ImGuiColorEditFlags_NoOptions);
-
-								ImGui::BeginGroup();
-								{
-									auto frameChannelSize = ImVec2(
-											frameSize.x * .332f,
-											frameSize.y * .332f);
-
-									// Show frame's channels
-									for (const auto& texChannel : m_texChannels) {										
-										ImGui::Image(
-											(ImTextureID)(uintptr_t)texChannel.idx,
-											frameChannelSize);
+										int32_t thresh = 40;
+										cv::Vec4b minRange = cv::Vec4b(
+											cv::saturate_cast<uchar>(colorSpacePixel[0] - thresh),
+											cv::saturate_cast<uchar>(colorSpacePixel[1] - thresh),
+											cv::saturate_cast<uchar>(colorSpacePixel[2] - thresh),
+											0
+										);
 										
-										ImGui::SameLine();
-									}
+										cv::Vec4b maxRange = cv::Vec4b(
+											cv::saturate_cast<uchar>(colorSpacePixel[0] + thresh),
+											cv::saturate_cast<uchar>(colorSpacePixel[1] + thresh),
+											cv::saturate_cast<uchar>(colorSpacePixel[2] + thresh),
+											255
+										);
 
-									ImGui::EndGroup();
+										// Copute the mask in color space
+										cv::Mat maskImage, resultImage;
+										cv::inRange(colorSpaceFrame, minRange, maxRange, maskImage);
+										
+										// Apply the mask to the original camera frame in RGBA
+										cv::bitwise_and(cameraFrame, cameraFrame, resultImage, maskImage);
+										cameraFrame = resultImage;
+									}
 								}
 							}
+							
+							// Upload image data to textures
+							updateImageToTexture(cameraFrame, m_texRGBA);
+							updateImageToTexture(frameChannels[0], m_texChannels[0]);
+							updateImageToTexture(frameChannels[1], m_texChannels[1]);
+							updateImageToTexture(frameChannels[2], m_texChannels[2]);
+						
+							// Displayed camera frame' size
+							auto frameSize = ImVec2(
+								(float)cameraFrame.cols,
+								(float)cameraFrame.rows);
+							
+							// Show the main frame
+							ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
+							
+							// Color picker
+							ImGui::ColorEdit3("", m_selectedColor,
+								ImGuiColorEditFlags_NoSliders
+								| ImGuiColorEditFlags_NoPicker
+								| ImGuiColorEditFlags_NoOptions);
+							ImGui::BeginGroup();
+							{
+								auto frameChannelSize = ImVec2(
+										frameSize.x * .332f,
+										frameSize.y * .332f);
+								// Show frame's channels
+								for (const auto& texChannel : m_texChannels) {										
+									ImGui::Image(
+										(ImTextureID)(uintptr_t)texChannel.idx,
+										frameChannelSize);
+									
+									ImGui::SameLine();
+								}
+								ImGui::EndGroup();
+							}
+						}
 
+						// Camera window
 						ImGui::End();
 												
 						if(!showVideoWindow) {
 							removeState(SHOW_CAMERA);
 						}
+						
+
+						imguiEndFrame();
 					}
+				}		
 
-					imguiEndFrame();
-				}
-			}		
-
-			// Advance to next frame. Rendering thread will be
-			//  kicked to process submitted rendering primitives.
-			bgfx::frame();
-			return true;
-		}
+				// Advance to next frame. Rendering thread will be
+				//  kicked to process submitted rendering primitives.
+				bgfx::frame();
+				return true;
+			}
+		} catch (cv::Exception& e) {
+        	std::cerr << e.what() << std::endl;
+        	std::exit(EXIT_FAILURE);
+    	}
 
 		return false;
 	}
