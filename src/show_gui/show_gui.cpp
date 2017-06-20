@@ -97,6 +97,21 @@ namespace {
 
 		return r;
 	}
+
+	ImVec4 cvVec4bToImVec4f(const cv::Vec4b& color) {
+		ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16) | (color[3] << 24);
+		return ImGui::ColorConvertU32ToFloat4(u32Color);
+	}
+
+	ImVec4 cvVec3bToImVec4f(const cv::Vec3b& color, uint8_t alpha = 0xff) {
+		ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16) | (alpha << 24);
+		return ImGui::ColorConvertU32ToFloat4(u32Color);
+	}
+
+	// ImVec3 cvVec3bToImVec3f(const cv::Vec3b& color) {
+	// 	ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16));
+	// 	return ImGui::ColorConvertU32ToFloat4(u32Color);
+	// }
 }
 
 class ShowGUI : public entry::AppI {
@@ -377,7 +392,7 @@ class ShowGUI : public entry::AppI {
 		m_states = NONE;
 		addState(SHOW_CAMERA);
 
-		bx::memSet(m_selectedColor, 0x0, sizeof(m_selectedColor));
+		bx::memSet(&m_selectedColor, 0x0, sizeof(m_selectedColor));
 		m_timeOffset = bx::getHPCounter();
 	}
 
@@ -430,7 +445,7 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual bool update() override	{
-		try {
+		//try {
 			if (!hasState(EXIT_REQUEST) &&
 				!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
 
@@ -477,20 +492,26 @@ class ShowGUI : public entry::AppI {
 
 					cv::Mat colorSpaceFrame;
 					cv::Mat frameChannels[3];
+
+					std::string colorSpaceString = "RGB";
+					int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
+					int32_t	bgrRevertCode = cv::COLOR_RGB2BGR;
+
 					{
 						// Pick the requested color space
-						std::string colorSpaceString = "RGB";
-						int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
 						if (hasState(COLOR_SPACE_HSV)) {
 							colorSpaceCode = cv::COLOR_BGR2HSV;
+							bgrRevertCode = cv::COLOR_HSV2BGR;
 							colorSpaceString = "HSV";
 						}
 						else if (hasState(COLOR_SPACE_YCrCb)) {
 							colorSpaceCode = cv::COLOR_BGR2YCrCb;
+							bgrRevertCode = cv::COLOR_YCrCb2BGR;
 							colorSpaceString = "YCrCb";
 						}
 						else if (hasState(COLOR_SPACE_Lab)) {
 							colorSpaceCode = cv::COLOR_BGR2Lab;
+							bgrRevertCode = cv::COLOR_Lab2BGR;
 							colorSpaceString = "Lab";
 						}
 
@@ -535,21 +556,21 @@ class ShowGUI : public entry::AppI {
 							alphaOne
 						};
 						
-						cv::merge(grayChannels, 4, colorSpaceFrame);
+						cv::merge(grayChannels, 3, colorSpaceFrame);
 					}
 
 					// Show video
 					{
 						// Draw UI
 						imguiBeginFrame(m_mouseState.m_mx
-								, m_mouseState.m_my
-								, (m_mouseState.m_buttons[entry::MouseButton::Left] ? IMGUI_MBUT_LEFT : 0)
-								| (m_mouseState.m_buttons[entry::MouseButton::Right] ? IMGUI_MBUT_RIGHT : 0)
-								| (m_mouseState.m_buttons[entry::MouseButton::Middle] ? IMGUI_MBUT_MIDDLE : 0)
-								, m_mouseState.m_mz
-								, uint16_t(m_width)
-								, uint16_t(m_height)
-								);
+							, m_mouseState.m_my
+							, (m_mouseState.m_buttons[entry::MouseButton::Left] ? IMGUI_MBUT_LEFT : 0)
+							| (m_mouseState.m_buttons[entry::MouseButton::Right] ? IMGUI_MBUT_RIGHT : 0)
+							| (m_mouseState.m_buttons[entry::MouseButton::Middle] ? IMGUI_MBUT_MIDDLE : 0)
+							, m_mouseState.m_mz
+							, uint16_t(m_width)
+							, uint16_t(m_height)
+						);
 						
 						// Store current GUI cursor position to compute where the
 						// mouse pointer is, w.r.t. the displayed camera image.
@@ -581,55 +602,68 @@ class ShowGUI : public entry::AppI {
 							
 							if (imageROI.contains(mouseAtPixel)) {
 								// Color at pixel
-								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
+								cv::Vec3b pixelColor = cameraFrame.at<cv::Vec3b>(
 									mouseAtPixel.y, mouseAtPixel.x);
 							
 								bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel at (%d,%d) RGB=[%d %d %d]",
 									mouseAtPixel.x, mouseAtPixel.y,
 									pixelColor[0], pixelColor[1], pixelColor[2]
 								);
+
+								int32_t thresh = 40 + m_mouseState.m_mz;
+								bgfx::dbgTextPrintf(0, 10, 0x0f, "Color threshold: %d", thresh);
 							
 								// If mouse right button is pressed, the color
 								// of this pixel is the one we want to filter.
 								if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
-									ImU32 u32Color = (pixelColor[0])
-										| (pixelColor[1] << 8)
-										| (pixelColor[2] << 16)
-										| (0xff << 24);
 									
-									ImVec4 floatColor = ImGui::ColorConvertU32ToFloat4(u32Color);
-									m_selectedColor[0] = floatColor.x;
-									m_selectedColor[1] = floatColor.y;
-									m_selectedColor[2] = floatColor.z;
-									
+									m_selectedColor = cvVec3bToImVec4f(pixelColor);
 									{
 										// Create a mask, showing only those pixels of similar color
 										// as long as the user keep the mouse button presses.
-										cv::Vec4b colorSpacePixel = colorSpaceFrame.at<cv::Vec4b>(
+										cv::Vec3b colorSpacePixel = colorSpaceFrame.at<cv::Vec3b>(
 											mouseAtPixel.y, mouseAtPixel.x);
 										
-										int32_t thresh = 40;
-										cv::Vec4b minRange = cv::Vec4b(
+										cv::Vec3b lowerColor(
 											cv::saturate_cast<uchar>(colorSpacePixel[0] - thresh),
 											cv::saturate_cast<uchar>(colorSpacePixel[1] - thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[2] - thresh),
-											0
+											cv::saturate_cast<uchar>(colorSpacePixel[2] - thresh)
 										);
 										
-										cv::Vec4b maxRange = cv::Vec4b(
+										cv::Vec3b uppderColor(
 											cv::saturate_cast<uchar>(colorSpacePixel[0] + thresh),
 											cv::saturate_cast<uchar>(colorSpacePixel[1] + thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[2] + thresh),
-											255
+											cv::saturate_cast<uchar>(colorSpacePixel[2] + thresh)
 										);
 
-										// Copute the mask in color space
-										cv::Mat maskImage, resultImage;
-										cv::inRange(colorSpaceFrame, minRange, maxRange, maskImage);
-										
-										// Apply the mask to the original camera frame in RGBA
-										cv::bitwise_and(cameraFrame, cameraFrame, resultImage, maskImage);
-										cameraFrame = resultImage;
+										// To diplay the color correctly we need to convet
+										// back to RGBA from the picked color space pixel.
+										{
+											// Create a matrix image of one pixel only.
+											cv::Mat3b lowerImage(lowerColor);
+											cv::Mat3b upperImage(uppderColor);
+
+											// Convert these 1x1 matrices to RGBA space.
+											cv::cvtColor(lowerImage, lowerImage, bgrRevertCode);
+											cv::cvtColor(upperImage, upperImage, bgrRevertCode);
+											
+											// cv::Mat4b lowerImageRGBA, upperImageRGBA;
+											// cv::cvtColor(lowerImage, lowerImageRGBA, cv::COLOR_BGR2RGBA);
+											// cv::cvtColor(maxRange, upperImageRGBA, cv::COLOR_BGR2RGBA);
+
+											// Read back the pixel in RGBA
+											m_minColor = cvVec3bToImVec4f(lowerImage(0, 0));
+											m_maxColor = cvVec3bToImVec4f(upperImage(0, 0));
+
+											// Extract the mask in color space
+											cv::Mat maskImage, resultImage;
+											cv::inRange(colorSpaceFrame, lowerImage, upperImage, maskImage);
+											
+											// Apply the mask to the original camera frame in RGBA
+											cv::bitwise_and(cameraFrame, cameraFrame, resultImage, maskImage);
+											//cv::cvtColor(resultImage, cameraFrame, cv::COLOR_BGR2RGBA);
+											cameraFrame = resultImage;
+										}
 									}
 								}
 							}
@@ -639,31 +673,40 @@ class ShowGUI : public entry::AppI {
 							updateImageToTexture(frameChannels[0], m_texChannels[0]);
 							updateImageToTexture(frameChannels[1], m_texChannels[1]);
 							updateImageToTexture(frameChannels[2], m_texChannels[2]);
-						
+
 							// Displayed camera frame' size
-							auto frameSize = ImVec2(
-								(float)cameraFrame.cols,
-								(float)cameraFrame.rows);
+							auto frameSize = ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows);
 							
 							// Show the main frame
 							ImGui::Image((ImTextureID)(uintptr_t)m_texRGBA.idx, frameSize);
 							
 							// Color picker
-							ImGui::ColorEdit3("", m_selectedColor,
+							ImGui::ColorEdit3("Picked Color", &m_selectedColor.x,
 								ImGuiColorEditFlags_NoSliders
 								| ImGuiColorEditFlags_NoPicker
 								| ImGuiColorEditFlags_NoOptions);
+							
+
+							ImGui::SameLine();
+							ImGui::ColorEdit3("Lower Bound", &m_minColor.x,
+								ImGuiColorEditFlags_NoSliders
+								| ImGuiColorEditFlags_NoPicker
+								| ImGuiColorEditFlags_NoOptions);
+
+							ImGui::SameLine();
+							ImGui::ColorEdit3("Upper Bound", &m_maxColor.x,
+								ImGuiColorEditFlags_NoSliders
+								| ImGuiColorEditFlags_NoPicker
+								| ImGuiColorEditFlags_NoOptions);
+
 							ImGui::BeginGroup();
 							{
 								auto frameChannelSize = ImVec2(
-										frameSize.x * .332f,
-										frameSize.y * .332f);
+									frameSize.x * .332f, frameSize.y * .332f);
+										
 								// Show frame's channels
 								for (const auto& texChannel : m_texChannels) {										
-									ImGui::Image(
-										(ImTextureID)(uintptr_t)texChannel.idx,
-										frameChannelSize);
-									
+									ImGui::Image(texChannel, frameChannelSize);
 									ImGui::SameLine();
 								}
 								ImGui::EndGroup();
@@ -672,11 +715,10 @@ class ShowGUI : public entry::AppI {
 
 						// Camera window
 						ImGui::End();
-												
+									
 						if(!showVideoWindow) {
 							removeState(SHOW_CAMERA);
 						}
-						
 
 						imguiEndFrame();
 					}
@@ -687,10 +729,10 @@ class ShowGUI : public entry::AppI {
 				bgfx::frame();
 				return true;
 			}
-		} catch (cv::Exception& e) {
-        	std::cerr << e.what() << std::endl;
-        	std::exit(EXIT_FAILURE);
-    	}
+		// } catch (cv::Exception& e) {
+        // 	std::cerr << e.what() << std::endl;
+        // 	std::exit(EXIT_FAILURE);
+    	// }
 
 		return false;
 	}
@@ -743,7 +785,9 @@ class ShowGUI : public entry::AppI {
 	cv::VideoCapture		m_videoCapture;
 	CameraInfo				m_cameraInfo;
 
-	float					m_selectedColor[3];
+	ImVec4					m_selectedColor;
+	ImVec4					m_minColor;
+	ImVec4					m_maxColor;
 
 	uint32_t	m_states;
 	uint32_t    m_width;
