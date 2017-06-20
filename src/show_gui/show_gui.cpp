@@ -600,13 +600,18 @@ class ShowGUI : public entry::AppI {
 							cv::Rect imageROI = cv::Rect(0, 0, cameraFrame.cols, cameraFrame.rows);
 							
 							if (imageROI.contains(mouseAtPixel)) {
-								// Color at pixel
+								// RGB pixel color at requested image coordinates
 								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
 									mouseAtPixel.y, mouseAtPixel.x);
+
+								cv::Vec3b colorSpacePixel = colorSpaceFrame.at<cv::Vec3b>(
+											mouseAtPixel.y, mouseAtPixel.x);
 							
-								bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel at (%d,%d) RGB=[%d %d %d]",
+								bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel at (%d,%d) RGB=[%d %d %d] %s=[%d %d %d]",
 									mouseAtPixel.x, mouseAtPixel.y,
-									pixelColor[0], pixelColor[1], pixelColor[2]
+									pixelColor[0], pixelColor[1], pixelColor[2],
+									colorSpaceString.c_str(),
+									colorSpacePixel[0], colorSpacePixel[1], colorSpacePixel[2]
 								);
 
 								int32_t tolerance = 40 + m_mouseState.m_mz;
@@ -615,14 +620,8 @@ class ShowGUI : public entry::AppI {
 								// If mouse right button is pressed, the color
 								// of this pixel is the one we want to filter.
 								if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
-									
 									m_selectedColor = cvVec4bToImVec4f(pixelColor);
-									{
-										// Create a mask, showing only those pixels of similar color
-										// as long as the user keep the mouse button presses.
-										cv::Vec4b colorSpacePixel = colorSpaceFrame.at<cv::Vec4b>(
-											mouseAtPixel.y, mouseAtPixel.x);
-										
+									{										
 										cv::Vec3b lowerColor(
 											cv::saturate_cast<uchar>(colorSpacePixel[0] - tolerance),
 											cv::saturate_cast<uchar>(colorSpacePixel[1] - tolerance),
