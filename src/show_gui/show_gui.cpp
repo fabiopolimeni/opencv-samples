@@ -501,17 +501,17 @@ class ShowGUI : public entry::AppI {
 						// Pick the requested color space
 						if (hasState(COLOR_SPACE_HSV)) {
 							colorSpaceCode = cv::COLOR_BGR2HSV;
-							bgrRevertCode = cv::COLOR_HSV2BGR;
+							bgrRevertCode = cv::COLOR_HSV2RGB;
 							colorSpaceString = "HSV";
 						}
 						else if (hasState(COLOR_SPACE_YCrCb)) {
 							colorSpaceCode = cv::COLOR_BGR2YCrCb;
-							bgrRevertCode = cv::COLOR_YCrCb2BGR;
+							bgrRevertCode = cv::COLOR_YCrCb2RGB;
 							colorSpaceString = "YCrCb";
 						}
 						else if (hasState(COLOR_SPACE_Lab)) {
 							colorSpaceCode = cv::COLOR_BGR2Lab;
-							bgrRevertCode = cv::COLOR_Lab2BGR;
+							bgrRevertCode = cv::COLOR_Lab2RGB;
 							colorSpaceString = "Lab";
 						}
 
@@ -548,12 +548,11 @@ class ShowGUI : public entry::AppI {
 						}
 
 						// Merge channels into a single image
-						cv::Mat alphaOne = cv::Mat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
+						//cv::Mat alphaOne = cv::Mat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
 						cv::Mat grayChannels[] = {
 							channels[0].getMat(cv::ACCESS_READ).clone(),
 							channels[1].getMat(cv::ACCESS_READ).clone(),
-							channels[2].getMat(cv::ACCESS_READ).clone(),
-							alphaOne
+							channels[2].getMat(cv::ACCESS_READ).clone()
 						};
 						
 						cv::merge(grayChannels, 3, colorSpaceFrame);
@@ -602,7 +601,7 @@ class ShowGUI : public entry::AppI {
 							
 							if (imageROI.contains(mouseAtPixel)) {
 								// Color at pixel
-								cv::Vec3b pixelColor = cameraFrame.at<cv::Vec3b>(
+								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
 									mouseAtPixel.y, mouseAtPixel.x);
 							
 								bgfx::dbgTextPrintf(0, 9, 0x0f, "Pixel at (%d,%d) RGB=[%d %d %d]",
@@ -610,54 +609,53 @@ class ShowGUI : public entry::AppI {
 									pixelColor[0], pixelColor[1], pixelColor[2]
 								);
 
-								int32_t thresh = 40 + m_mouseState.m_mz;
-								bgfx::dbgTextPrintf(0, 10, 0x0f, "Color threshold: %d", thresh);
+								int32_t tolerance = 40 + m_mouseState.m_mz;
+								bgfx::dbgTextPrintf(0, 10, 0x0f, "Picking tolerance: %d", tolerance);
 							
 								// If mouse right button is pressed, the color
 								// of this pixel is the one we want to filter.
 								if (m_mouseState.m_buttons[entry::MouseButton::Right]) {
 									
-									m_selectedColor = cvVec3bToImVec4f(pixelColor);
+									m_selectedColor = cvVec4bToImVec4f(pixelColor);
 									{
 										// Create a mask, showing only those pixels of similar color
 										// as long as the user keep the mouse button presses.
-										cv::Vec3b colorSpacePixel = colorSpaceFrame.at<cv::Vec3b>(
+										cv::Vec4b colorSpacePixel = colorSpaceFrame.at<cv::Vec4b>(
 											mouseAtPixel.y, mouseAtPixel.x);
 										
 										cv::Vec3b lowerColor(
-											cv::saturate_cast<uchar>(colorSpacePixel[0] - thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[1] - thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[2] - thresh)
+											cv::saturate_cast<uchar>(colorSpacePixel[0] - tolerance),
+											cv::saturate_cast<uchar>(colorSpacePixel[1] - tolerance),
+											cv::saturate_cast<uchar>(colorSpacePixel[2] - tolerance)
 										);
 										
 										cv::Vec3b uppderColor(
-											cv::saturate_cast<uchar>(colorSpacePixel[0] + thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[1] + thresh),
-											cv::saturate_cast<uchar>(colorSpacePixel[2] + thresh)
+											cv::saturate_cast<uchar>(colorSpacePixel[0] + tolerance),
+											cv::saturate_cast<uchar>(colorSpacePixel[1] + tolerance),
+											cv::saturate_cast<uchar>(colorSpacePixel[2] + tolerance)
 										);
 
 										// To diplay the color correctly we need to convet
-										// back to RGBA from the picked color space pixel.
+										// back to RGB from the picked color space pixel.
 										{
 											// Create a matrix image of one pixel only.
 											cv::Mat3b lowerImage(lowerColor);
 											cv::Mat3b upperImage(uppderColor);
 
-											// Convert these 1x1 matrices to RGBA space.
-											cv::cvtColor(lowerImage, lowerImage, bgrRevertCode);
-											cv::cvtColor(upperImage, upperImage, bgrRevertCode);
-											
-											// cv::Mat4b lowerImageRGBA, upperImageRGBA;
-											// cv::cvtColor(lowerImage, lowerImageRGBA, cv::COLOR_BGR2RGBA);
-											// cv::cvtColor(maxRange, upperImageRGBA, cv::COLOR_BGR2RGBA);
+											// Convert these 1x1 matrices to RGB space,
+											// but we are already operating in RGB.
+											if (colorSpaceCode != cv::COLOR_BGR2RGB) {
+												cv::cvtColor(lowerImage, lowerImage, bgrRevertCode);
+												cv::cvtColor(upperImage, upperImage, bgrRevertCode);
+											}										
 
-											// Read back the pixel in RGBA
+											// Read back the pixel in RGB
 											m_minColor = cvVec3bToImVec4f(lowerImage(0, 0));
 											m_maxColor = cvVec3bToImVec4f(upperImage(0, 0));
 
 											// Extract the mask in color space
 											cv::Mat maskImage, resultImage;
-											cv::inRange(colorSpaceFrame, lowerImage, upperImage, maskImage);
+											cv::inRange(colorSpaceFrame, lowerColor, uppderColor, maskImage);
 											
 											// Apply the mask to the original camera frame in RGBA
 											cv::bitwise_and(cameraFrame, cameraFrame, resultImage, maskImage);
@@ -686,7 +684,6 @@ class ShowGUI : public entry::AppI {
 								| ImGuiColorEditFlags_NoPicker
 								| ImGuiColorEditFlags_NoOptions);
 							
-
 							ImGui::SameLine();
 							ImGui::ColorEdit3("Lower Bound", &m_minColor.x,
 								ImGuiColorEditFlags_NoSliders
