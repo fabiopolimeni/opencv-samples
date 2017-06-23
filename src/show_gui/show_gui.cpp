@@ -128,7 +128,7 @@ public:
 			"{help usage h| |Program usage}"
 			"{info i| |OpenCV build info}"
 			"{enum e| |Enumerates available cameras}"
-			"{frames f|4|Number of frames in the buffer}"
+			"{frames f|2|Number of frames in the buffer}"
 			"{offset o|-1|Offset into the frame's buffer}"
 			"{multi-threaded mt| |Multi-threaded}"
 			"{@camera|0|Camera to show}"
