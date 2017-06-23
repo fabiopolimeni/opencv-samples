@@ -3,6 +3,12 @@ set(SAMPLE_NAME show_gui)
 add_executable(${SAMPLE_NAME} ${SAMPLE_NAME}.cpp imgui_ext.cpp)
 target_include_directories(${SAMPLE_NAME} PRIVATE .)
 
+set_target_properties(${SAMPLE_NAME} PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
 # bgfx
 target_link_libraries(${SAMPLE_NAME} bgfx bimg bx ib-compress ocornut-imgui example-common)
 if(UNIX AND NOT APPLE)

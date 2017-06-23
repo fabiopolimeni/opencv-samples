@@ -21,6 +21,10 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <atomic>
+#include <thread>
+#include <mutex>
+#include <shared_mutex>
 
 namespace {
 
@@ -107,17 +111,214 @@ namespace {
 		ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16) | (alpha << 24);
 		return ImGui::ColorConvertU32ToFloat4(u32Color);
 	}
-
-	// ImVec3 cvVec3bToImVec3f(const cv::Vec3b& color) {
-	// 	ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16));
-	// 	return ImGui::ColorConvertU32ToFloat4(u32Color);
-	// }
 }
+
+class FrameProvider {
+
+public:
+
+	bool init(int _argc, char** _argv) {
+		std::string options =
+			"{help usage h| |Program usage}"
+			"{info i| |OpenCV build info}"
+			"{enum e| |Enumerates available cameras}"
+			"{frames f|4|Number of frames in the buffer}"
+			"{multi-threaded mt| |Multi-threaded}"
+			"{@camera|0|Camera to show}"
+			"{@width|640|Desired frame width}"
+			"{@height|360|Desired frame height}"
+			"{@fps|60|Desired frame-rate}";
+
+		cv::CommandLineParser parser(_argc, _argv, options);
+		parser.about("Shows the view of the chosen camera");
+
+		if (!parser.check()) {
+			parser.printErrors();
+			return false;
+		}
+
+		if (parser.has("info")) {
+			std::cout << cv::getBuildInformation() << std::endl;
+			return false;
+		}
+
+		if (parser.has("help")) {
+			parser.printMessage();
+			return false;
+		}
+
+		// Users wants to know the cameras availables
+		if (parser.has("e")) {
+			auto cameras = enumerateCameras();
+			std::cout << "Available cameras: " << std::endl;
+			for (auto camera : cameras) {
+				printCameraInfo(camera);
+			}
+			std::cout << std::flush;
+			return false;
+		}
+
+		// Get the maximum number of frames we want to store into the frame's buffer
+		m_NumOfFrames = parser.get<int32_t>("frames");
+		m_cameraFrames = new Frame[m_NumOfFrames];
+
+		// Create a camera info for the given command line's arguments
+		CameraInfo ci = {
+			parser.get<int32_t>("@camera"),
+			cv::Size(
+				parser.get<int32_t>("@width"),
+				parser.get<int32_t>("@height")),
+			parser.get<int32_t>("@fps")
+		};
+
+		if (!m_videoCapture.open(ci.id)) {
+			std::cerr << "Camera " << ci.id << " is not available!" << std::endl;
+			parser.printMessage();
+			return false;
+		}
+
+		m_videoCapture.set(CV_CAP_PROP_FRAME_WIDTH, (double)ci.frame_size.width);
+		m_videoCapture.set(CV_CAP_PROP_FRAME_HEIGHT, (double)ci.frame_size.height);
+		m_videoCapture.set(CV_CAP_PROP_FPS, (double)ci.fps);
+		
+		m_cameraInfo = {
+			ci.id,
+			cv::Size(
+				(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_WIDTH),
+				(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_HEIGHT)),
+			(int32_t)m_videoCapture.get(CV_CAP_PROP_FPS)
+		};
+
+		m_process.test_and_set(std::memory_order::memory_order_acq_rel);
+		m_capture.store(false, std::memory_order::memory_order_relaxed);
+		m_bufferIndex.store(0, std::memory_order::memory_order_release);
+
+		// If multi-threading is enabled, create a
+		// thread and execute here the tick funciton.
+		m_isMultiThreaded = parser.has("multi-threaded");
+		if (m_isMultiThreaded) {
+			m_captureThread = std::thread([this]{
+				while(m_process.test_and_set(std::memory_order::memory_order_acq_rel)) {
+					this->tick();
+				}
+			});
+		}
+
+		return true;
+	}
+
+	// Retuns whether a new image has been added into the buffer.
+	bool tick() {
+		if (m_capture.load(std::memory_order::memory_order_relaxed)) {
+			
+			cv::Mat cameraFrame;
+			if (m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
+				// Write into the back buffer, which in our case
+				// technically is the following available frame in the buffer
+				auto backIndex = computeBufferIndex(m_bufferIndex + 1);
+				auto& frame = m_cameraFrames[backIndex];
+				frame.write(cameraFrame);
+
+				// The following operation will not necessarly make
+				// variables visible and consistent to the rest of
+				// the threads, e.g ARM architecture, if it wasn't
+				// for the release memory order.
+				// Being the index an atomic object it guarantees
+				// that two threads, querying the buffer before the
+				// next write is issued, will see the same result,
+				// and therefore, they will process the same image.
+				m_bufferIndex.fetch_add(1, std::memory_order::memory_order_release);
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	void shutdown() {
+		m_process.clear(std::memory_order::memory_order_release);
+		if (m_captureThread.joinable()) {
+			m_captureThread.join();
+		}
+
+		delete[] m_cameraFrames;
+	}
+
+	void capture(bool _onOff) {
+		m_capture.store(_onOff, std::memory_order::memory_order_relaxed);
+		if (!m_isMultiThreaded) {
+			tick();
+		}
+	}
+
+	// Return a copy of the current front-buffer camera's capture
+	cv::Mat getCameraFrame(int32_t _offset = 0) const {
+		return m_cameraFrames[getBufferIndexByOffset(_offset)].read();
+	}
+
+	const CameraInfo& getCameraInfo() const {
+		return m_cameraInfo;
+	}
+
+	bool isMultiThreaded() const {
+		return m_isMultiThreaded;
+	}
+
+private:
+	
+	class Frame {
+		cv::Mat				m_imageBGR;
+		std::shared_mutex	m_rwMutex;
+
+	public:
+		cv::Mat read() {
+			m_rwMutex.lock_shared();
+			auto image = m_imageBGR.clone();
+			m_rwMutex.unlock_shared();
+			return image;
+		}
+
+		void write(const cv::Mat& _image) {
+			m_rwMutex.lock();
+			m_imageBGR = _image.clone();
+			m_rwMutex.unlock();
+		}
+	};
+
+	cv::VideoCapture		m_videoCapture;
+	
+	Frame*					m_cameraFrames;
+	CameraInfo				m_cameraInfo;
+
+	std::thread				m_captureThread;
+
+	std::atomic_flag		m_process;
+	std::atomic<bool>		m_capture;
+
+	std::atomic<int32_t>	m_bufferIndex;
+	int32_t					m_NumOfFrames;
+	bool					m_isMultiThreaded;
+
+	int32_t computeBufferIndex(int32_t _value) const {
+		return _value % m_NumOfFrames;
+	}
+
+	int32_t getBufferIndexByOffset(int32_t _offset) const {
+		return computeBufferIndex(
+			m_bufferIndex.load(std::memory_order::memory_order_acquire)
+			+ _offset
+		);
+	}
+
+	int32_t getNumberOfFramesInBuffer() const {
+		return m_NumOfFrames;
+	}
+
+};
 
 class ShowGUI : public entry::AppI {
 
 	void setupGUIStyle() {
-
 		// Fonts
 		//ImGuiIO& io = ImGui::GetIO();
 		//io.Fonts->Clear();
@@ -194,84 +395,6 @@ class ShowGUI : public entry::AppI {
 		imguiCreate();
 		setupGUIStyle();
 	}
-	
-	void initOpenCV(int _argc, char** _argv) {
-		try {
-			std::string options =
-				"{help h usage| |Program usage}"
-				"{info i| |OpenCV build info}"
-				"{enum e| |Enumerates available cameras|}"
-				"{@camera|0|Camera to show|}"
-				"{@width|640|Desired frame width|}"
-				"{@height|360|Desired frame height|}"
-				"{@fps|60|Desired frame-rate|}";
-
-			cv::CommandLineParser parser(_argc, _argv, options);
-			parser.about("Shows the view of the chosen camera");
-
-			if (parser.has("help")) {
-				parser.printMessage();
-				std::exit(EXIT_SUCCESS);
-			}
-
-			if (parser.has("info")) {
-				std::cout << cv::getBuildInformation() << std::endl;
-				std::exit(EXIT_SUCCESS);
-			}
-
-			if (!parser.check()) {
-				parser.printErrors();
-				std::exit(EXIT_FAILURE);
-			}
-
-			// Users wants to know the cameras availables
-			if (parser.has("e")) {
-				auto cameras = enumerateCameras();
-
-				std::cout << "Available cameras: " << std::endl;
-				for (auto camera : cameras) {
-					printCameraInfo(camera);
-				}
-
-				std::cout << std::flush;
-				std::exit(EXIT_SUCCESS);
-			}
-
-			// Create a camera info for the given command line's arguments
-			CameraInfo ci = {
-				parser.get<int32_t>("@camera"),
-				cv::Size(
-					parser.get<int32_t>("@width"),
-					parser.get<int32_t>("@height")),
-				parser.get<int32_t>("@fps")
-			};
-
-			if (!m_videoCapture.open(ci.id)) {
-				std::cerr << "Camera " << ci.id << " is not available!" << std::endl;
-				parser.printMessage();
-				std::exit(EXIT_FAILURE);
-			}
-
-			m_videoCapture.set(CV_CAP_PROP_FRAME_WIDTH, (double)ci.frame_size.width);
-			m_videoCapture.set(CV_CAP_PROP_FRAME_HEIGHT, (double)ci.frame_size.height);
-			m_videoCapture.set(CV_CAP_PROP_FPS, (double)ci.fps);
-
-			m_cameraInfo = {
-				ci.id,
-				cv::Size(
-					(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_WIDTH),
-					(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_HEIGHT)),
-				(int32_t)m_videoCapture.get(CV_CAP_PROP_FPS)
-			};
-
-			// Print caps of current camera
-        	printCameraInfo(m_cameraInfo);
-
-		} catch (cv::Exception& e) {
-        	std::cerr << e.what() << std::endl;
-        	std::exit(EXIT_FAILURE);
-    	}
-	}
 
 	void initBgfx(int _argc, char** _argv) {
 		Args args(_argc, _argv);
@@ -341,14 +464,19 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual void init(int _argc, char** _argv) override	{
-		initOpenCV(_argc, _argv);
+		if (!m_frameProvider.init(_argc, _argv)) {
+			std::exit(EXIT_SUCCESS);
+		}
+
 		initBgfx(_argc, _argv);
 		initGUI(_argc, _argv);
 
+		auto cameraInfo = m_frameProvider.getCameraInfo();
+
 		// Create the texture to hold camera input image
 		m_texRGBA = bgfx::createTexture2D(
-			m_cameraInfo.frame_size.width,					// width
-			m_cameraInfo.frame_size.height,					// height
+			cameraInfo.frame_size.width,					// width
+			cameraInfo.frame_size.height,					// height
 			false, 											// no mip-maps
 			1,												// number of layers
 			bgfx::TextureFormat::Enum::RGBA8,				// format
@@ -359,8 +487,8 @@ class ShowGUI : public entry::AppI {
 		// Create textures for displaing the channels separately
 		for (auto& tex : m_texChannels) {
 			tex = bgfx::createTexture2D(
-				m_cameraInfo.frame_size.width,					// width
-				m_cameraInfo.frame_size.height,					// height
+				cameraInfo.frame_size.width,					// width
+				cameraInfo.frame_size.height,					// height
 				false, 											// no mip-maps
 				1,												// number of layers
 				bgfx::TextureFormat::Enum::RGBA8,				// format
@@ -398,6 +526,7 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual int shutdown() override	{
+		m_frameProvider.shutdown();
 		imguiDestroy();
 		
 		bgfx::destroyTexture(m_texRGBA);
@@ -446,58 +575,57 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual bool update() override	{
-		//try {
-			if (!hasState(EXIT_REQUEST) &&
-				!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
+		if (!hasState(EXIT_REQUEST) &&
+			!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) ) {
+			int64_t now = bx::getHPCounter();
+			static int64_t last = now;
+			const int64_t frameTime = now - last;
+			last = now;
+			const double freq = double(bx::getHPFrequency());
+			const double toMs = 1000.0/freq;
+			float time = (float)((now-m_timeOffset)/double(bx::getHPFrequency()));
 
-				int64_t now = bx::getHPCounter();
-				static int64_t last = now;
-				const int64_t frameTime = now - last;
-				last = now;
-				const double freq = double(bx::getHPFrequency());
-				const double toMs = 1000.0/freq;
+			// Set view 0 default viewport.
+			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
 
-				float time = (float)((now-m_timeOffset)/double(bx::getHPFrequency()));
+			// This dummy draw call is here to make sure that view 0 is cleared
+			// if no other draw calls are submitted to view 0.
+			bgfx::touch(0);
 
-				// Set view 0 default viewport.
-				bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
-
-				// This dummy draw call is here to make sure that view 0 is cleared
-				// if no other draw calls are submitted to view 0.
-				bgfx::touch(0);
-
-				// Use debug font to print information about this example.
-				bgfx::dbgTextClear();
-
-				bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: Show Camera");
-				bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
-				bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
-
-				const bgfx::Stats* stats = bgfx::getStats();
-				bgfx::dbgTextPrintf(0, 5, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
-						stats->width, stats->height, stats->textWidth, stats->textHeight);
-
-				// Get the current camera frame and show on the GUIs windows
-				cv::Mat cameraFrame;
-				if (hasState(SHOW_CAMERA) && m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
+			// Use debug font to print information about this example.
+			bgfx::dbgTextClear();
+			bgfx::dbgTextPrintf(0, 1, 0x4f, "Program: Show Camera");
+			bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Rendering captured camera frames into different color spaces.");
+			bgfx::dbgTextPrintf(0, 3, 0x8f, "Frame time: % 7.3f[ms]", double(frameTime)*toMs);	
+			
+			const bgfx::Stats* stats = bgfx::getStats();
+			bgfx::dbgTextPrintf(0, 5, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
+					stats->width, stats->height, stats->textWidth, stats->textHeight);
+			
+			// Get the current camera frame and show on the GUIs windows
+			bool showGUI = hasState(SHOW_CAMERA);
+			m_frameProvider.capture(showGUI);
+			if (showGUI) {
+				cv::Mat cameraFrame = m_frameProvider.getCameraFrame(-1);
+				if (!cameraFrame.empty()) {
+				
 					auto imageFrameType = cameraFrame.type();
-
-					bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps",
-						m_cameraInfo.frame_size.width,
-						m_cameraInfo.frame_size.height,
-						m_cameraInfo.fps);
-
+					auto cameraInfo = m_frameProvider.getCameraInfo();
+					
+					bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps (%s)",
+						cameraInfo.frame_size.width, cameraInfo.frame_size.height, cameraInfo.fps,
+						m_frameProvider.isMultiThreaded() ? "multi-threaded" : "single-thread");
+					
 					bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s)",
 						cameraFrame.cols, cameraFrame.rows,
 						cvTypeToString(imageFrameType).c_str());
-
+					
 					cv::Mat3b colorSpaceFrame;
 					cv::Mat frameChannels[3];
-
 					std::string colorSpaceString = "RGB";
+					
 					int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
 					int32_t	rgbToColorSpace = 0;
-
 					{
 						// Pick the requested color space
 						if (hasState(COLOR_SPACE_HSV)) {
@@ -515,27 +643,26 @@ class ShowGUI : public entry::AppI {
 							rgbToColorSpace = cv::COLOR_Lab2RGB;
 							colorSpaceString = "Lab";
 						}
-
 						bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
 							colorSpaceString.c_str());
 						
 						// Make sure we are in the right format and convert to UMat
 						cv::UMat bgr, colorSpaceImage;
 						cameraFrame.convertTo(bgr, CV_8UC3);
-
+						
 						// Convert camera input to the requested color space
 						cv::cvtColor(bgr, colorSpaceImage, colorSpaceCode);
-
+						
 						// Separate the color space channels
 						std::vector<cv::UMat> channels;
 						cv::split(colorSpaceImage, channels);
-
+						
 						// Convert bgr to rgba and back to Mat
 						// that is image data can be transferred to GPU
 						cv::UMat rgba;
 						cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
+						
 						cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
-
 						for (auto i = 0; i < channels.size(); ++i) {
 							// Convert single channel image into RGBA.
 							// This is a required step because ImGUI is not capable
@@ -543,11 +670,10 @@ class ShowGUI : public entry::AppI {
 							// the ability to show an image with a custom shader.
 							cv::UMat grayRGBA;
 							cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
-
 							// Convert to Mat to access data from the CPU
 							frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
 						}
-
+						
 						// Merge channels into a single image
 						//cv::Mat alphaOne = cv::Mat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
 						cv::Mat grayChannels[] = {
@@ -558,8 +684,8 @@ class ShowGUI : public entry::AppI {
 						
 						cv::merge(grayChannels, 3, colorSpaceFrame);
 					}
-
-					// Show video
+					
+					// Show camera capture on the GUI
 					{
 						// Draw UI
 						imguiBeginFrame(m_mouseState.m_mx
@@ -604,7 +730,6 @@ class ShowGUI : public entry::AppI {
 								// RGB pixel color at requested image coordinates
 								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
 									mouseAtPixel.y, mouseAtPixel.x);
-
 								cv::Vec3b pixelSpace = colorSpaceFrame.at<cv::Vec3b>(
 									mouseAtPixel.y, mouseAtPixel.x);
 							
@@ -614,7 +739,6 @@ class ShowGUI : public entry::AppI {
 									colorSpaceString.c_str(),
 									pixelSpace[0], pixelSpace[1], pixelSpace[2]
 								);
-
 								int32_t tolerance = 40 + m_mouseState.m_mz;
 								bgfx::dbgTextPrintf(0, 10, 0x0f, "Picking tolerance: %d", tolerance);
 							
@@ -634,19 +758,17 @@ class ShowGUI : public entry::AppI {
 											cv::saturate_cast<uchar>(pixelSpace[1] + tolerance),
 											cv::saturate_cast<uchar>(pixelSpace[2] + tolerance)
 										);
-
+										
 										// To diplay the color correctly we need to convet
 										// back to RGB from the picked color space pixel.
 										if (!hasState(COLOR_SPACE_RGB)) {
 											// Create a matrix image of one pixel only.
 											cv::Mat3b lowerImage(lowerColor);
 											cv::Mat3b upperImage(upperColor);
-
 											// Convert these 1x1 matrices to RGB space,
 											// but we are already operating in RGB.
 											cv::cvtColor(lowerImage, lowerImage, rgbToColorSpace);
 											cv::cvtColor(upperImage, upperImage, rgbToColorSpace);
-
 											// Read back the pixel in RGB for readibility purpose
 											m_minColor = cvVec3bToImVec4f(lowerImage(0, 0));
 											m_maxColor = cvVec3bToImVec4f(upperImage(0, 0));
@@ -656,7 +778,7 @@ class ShowGUI : public entry::AppI {
 											m_minColor = cvVec3bToImVec4f(lowerColor);
 											m_maxColor = cvVec3bToImVec4f(upperColor);
 										}
-
+										
 										// Extract the mask in requested color space
 										cv::Mat maskImage, resultImage;
 										cv::inRange(colorSpaceFrame, lowerColor, upperColor, maskImage);
@@ -674,7 +796,6 @@ class ShowGUI : public entry::AppI {
 							updateImageToTexture(frameChannels[0], m_texChannels[0]);
 							updateImageToTexture(frameChannels[1], m_texChannels[1]);
 							updateImageToTexture(frameChannels[2], m_texChannels[2]);
-
 							// Displayed camera frame' size
 							auto frameSize = ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows);
 							
@@ -692,13 +813,13 @@ class ShowGUI : public entry::AppI {
 								ImGuiColorEditFlags_NoSliders
 								| ImGuiColorEditFlags_NoPicker
 								| ImGuiColorEditFlags_NoOptions);
-
+							
 							ImGui::SameLine();
 							ImGui::ColorEdit3("Upper Bound", &m_maxColor.x,
 								ImGuiColorEditFlags_NoSliders
 								| ImGuiColorEditFlags_NoPicker
 								| ImGuiColorEditFlags_NoOptions);
-
+							
 							ImGui::BeginGroup();
 							{
 								auto frameChannelSize = ImVec2(
@@ -712,28 +833,25 @@ class ShowGUI : public entry::AppI {
 								ImGui::EndGroup();
 							}
 						}
-
+						
 						// Camera window
 						ImGui::End();
 									
 						if(!showVideoWindow) {
 							removeState(SHOW_CAMERA);
 						}
-
+						
 						imguiEndFrame();
 					}
-				}		
-
-				// Advance to next frame. Rendering thread will be
-				//  kicked to process submitted rendering primitives.
-				bgfx::frame();
-				return true;
-			}
-		// } catch (cv::Exception& e) {
-        // 	std::cerr << e.what() << std::endl;
-        // 	std::exit(EXIT_FAILURE);
-    	// }
-
+				}
+			}		
+			
+			// Advance to next frame. Rendering thread will be
+			// kicked to process submitted rendering primitives.
+			bgfx::frame();
+			return true;
+		}
+		
 		return false;
 	}
 
@@ -777,13 +895,12 @@ class ShowGUI : public entry::AppI {
 		addState(EXIT_REQUEST);
 	}
 
+	FrameProvider			m_frameProvider;
+
     entry::MouseState 		m_mouseState;
 	bgfx::TextureHandle		m_texRGBA;
 	bgfx::TextureHandle		m_texChannels[3];
 	std::string				m_progName;
-
-	cv::VideoCapture		m_videoCapture;
-	CameraInfo				m_cameraInfo;
 
 	ImVec4					m_selectedColor;
 	ImVec4					m_minColor;
