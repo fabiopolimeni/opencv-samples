@@ -25,6 +25,7 @@
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
+#include <algorithm>
 
 namespace {
 
@@ -38,6 +39,11 @@ namespace {
         typename T::size_type const p(filename.find_last_of('.'));
         return p > 0 && p != T::npos ? filename.substr(0, p) : filename;
     }
+
+	template<typename T>
+	T clamp(const T& v, const T& lo, const T& hi) {
+		return (v < lo) ? lo : (hi < v) ? hi : v;
+	}
 
 	struct CameraInfo {
 		int32_t     id;
@@ -123,6 +129,7 @@ public:
 			"{info i| |OpenCV build info}"
 			"{enum e| |Enumerates available cameras}"
 			"{frames f|4|Number of frames in the buffer}"
+			"{offset o|-1|Offset into the frame's buffer}"
 			"{multi-threaded mt| |Multi-threaded}"
 			"{@camera|0|Camera to show}"
 			"{@width|640|Desired frame width}"
@@ -159,8 +166,10 @@ public:
 		}
 
 		// Get the maximum number of frames we want to store into the frame's buffer
-		m_NumOfFrames = parser.get<int32_t>("frames");
-		m_cameraFrames = new Frame[m_NumOfFrames];
+		m_numOfFrames = clamp(parser.get<int32_t>("frames"), 1, 64);
+		m_cameraFrames = new Frame[m_numOfFrames];
+
+		m_frameOffset = clamp(parser.get<int32_t>("offset"), -(m_numOfFrames -1), 0);
 
 		// Create a camera info for the given command line's arguments
 		CameraInfo ci = {
@@ -191,7 +200,7 @@ public:
 
 		m_process.test_and_set(std::memory_order::memory_order_acq_rel);
 		m_capture.store(false, std::memory_order::memory_order_relaxed);
-		m_bufferIndex.store(0, std::memory_order::memory_order_release);
+		m_indexCounter.store(0, std::memory_order::memory_order_release);
 
 		// If multi-threading is enabled, create a
 		// thread and execute here the tick funciton.
@@ -215,7 +224,7 @@ public:
 			if (m_videoCapture.isOpened() && m_videoCapture.read(cameraFrame)) {
 				// Write into the back buffer, which in our case
 				// technically is the following available frame in the buffer
-				auto backIndex = computeBufferIndex(m_bufferIndex + 1);
+				auto backIndex = computeBufferIndex(m_indexCounter + 1);
 				auto& frame = m_cameraFrames[backIndex];
 				frame.write(cameraFrame);
 
@@ -227,7 +236,7 @@ public:
 				// that two threads, querying the buffer before the
 				// next write is issued, will see the same result,
 				// and therefore, they will process the same image.
-				m_bufferIndex.fetch_add(1, std::memory_order::memory_order_release);
+				m_indexCounter.fetch_add(1, std::memory_order::memory_order_release);
 				return true;
 			}
 		}
@@ -252,8 +261,16 @@ public:
 	}
 
 	// Return a copy of the current front-buffer camera's capture
-	cv::Mat getCameraFrame(int32_t _offset = 0) const {
-		return m_cameraFrames[getBufferIndexByOffset(_offset)].read();
+	cv::Mat getCameraFrame(int32_t _offset = 1) const {
+		// An offset greater than 0 indicates that we want to use
+		// the value passed as argument to the command line.
+		if (_offset > 0) {
+			_offset = m_frameOffset;
+		}
+
+		auto steps = clamp(_offset, -(m_numOfFrames -1), 0);
+		auto index = getBufferIndexByOffset(steps);
+		return m_cameraFrames[index].read();
 	}
 
 	const CameraInfo& getCameraInfo() const {
@@ -262,6 +279,10 @@ public:
 
 	bool isMultiThreaded() const {
 		return m_isMultiThreaded;
+	}
+
+	int32_t getNumberOfFramesInBuffer() const {
+		return m_numOfFrames;
 	}
 
 private:
@@ -295,25 +316,25 @@ private:
 	std::atomic_flag		m_process;
 	std::atomic<bool>		m_capture;
 
-	std::atomic<int32_t>	m_bufferIndex;
-	int32_t					m_NumOfFrames;
+	std::atomic<int32_t>	m_indexCounter;
+	int32_t					m_numOfFrames;
+	int32_t					m_frameOffset;
 	bool					m_isMultiThreaded;
 
 	int32_t computeBufferIndex(int32_t _value) const {
-		return _value % m_NumOfFrames;
+		return _value % m_numOfFrames;
 	}
 
 	int32_t getBufferIndexByOffset(int32_t _offset) const {
-		return computeBufferIndex(
-			m_bufferIndex.load(std::memory_order::memory_order_acquire)
-			+ _offset
-		);
+		auto counter = m_indexCounter.load(std::memory_order::memory_order_acquire);
+		auto index = counter + _offset;
+		if (index >= 0) {
+			return computeBufferIndex(index);
+		}
+		else {
+			return m_numOfFrames + index;
+		}
 	}
-
-	int32_t getNumberOfFramesInBuffer() const {
-		return m_NumOfFrames;
-	}
-
 };
 
 class ShowGUI : public entry::AppI {
@@ -606,7 +627,7 @@ class ShowGUI : public entry::AppI {
 			bool showGUI = hasState(SHOW_CAMERA);
 			m_frameProvider.capture(showGUI);
 			if (showGUI) {
-				cv::Mat cameraFrame = m_frameProvider.getCameraFrame(-1);
+				cv::Mat cameraFrame = m_frameProvider.getCameraFrame();
 				if (!cameraFrame.empty()) {
 				
 					auto imageFrameType = cameraFrame.type();
@@ -616,9 +637,10 @@ class ShowGUI : public entry::AppI {
 						cameraInfo.frame_size.width, cameraInfo.frame_size.height, cameraInfo.fps,
 						m_frameProvider.isMultiThreaded() ? "multi-threaded" : "single-thread");
 					
-					bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s)",
+					bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s frames: %d)",
 						cameraFrame.cols, cameraFrame.rows,
-						cvTypeToString(imageFrameType).c_str());
+						cvTypeToString(imageFrameType).c_str(),
+						m_frameProvider.getNumberOfFramesInBuffer());
 					
 					cv::Mat3b colorSpaceFrame;
 					cv::Mat frameChannels[3];
