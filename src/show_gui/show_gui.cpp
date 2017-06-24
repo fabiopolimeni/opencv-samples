@@ -644,10 +644,10 @@ class ShowGUI : public entry::AppI {
 					
 					cv::Mat3b colorSpaceFrame;
 					cv::Mat frameChannels[3];
-					std::string colorSpaceString = "RGB";
 					
 					int32_t colorSpaceCode = cv::COLOR_BGR2RGB;
 					int32_t	rgbToColorSpace = 0;
+					std::string colorSpaceString = "RGB";
 					{
 						// Pick the requested color space
 						if (hasState(COLOR_SPACE_HSV)) {
@@ -665,6 +665,7 @@ class ShowGUI : public entry::AppI {
 							rgbToColorSpace = cv::COLOR_Lab2RGB;
 							colorSpaceString = "Lab";
 						}
+						
 						bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
 							colorSpaceString.c_str());
 						
@@ -692,6 +693,7 @@ class ShowGUI : public entry::AppI {
 							// the ability to show an image with a custom shader.
 							cv::UMat grayRGBA;
 							cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
+							
 							// Convert to Mat to access data from the CPU
 							frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
 						}
@@ -761,6 +763,7 @@ class ShowGUI : public entry::AppI {
 									colorSpaceString.c_str(),
 									pixelSpace[0], pixelSpace[1], pixelSpace[2]
 								);
+								
 								int32_t tolerance = 40 + m_mouseState.m_mz;
 								bgfx::dbgTextPrintf(0, 10, 0x0f, "Picking tolerance: %d", tolerance);
 							
@@ -818,6 +821,7 @@ class ShowGUI : public entry::AppI {
 							updateImageToTexture(frameChannels[0], m_texChannels[0]);
 							updateImageToTexture(frameChannels[1], m_texChannels[1]);
 							updateImageToTexture(frameChannels[2], m_texChannels[2]);
+							
 							// Displayed camera frame' size
 							auto frameSize = ImVec2((float)cameraFrame.cols, (float)cameraFrame.rows);
 							
