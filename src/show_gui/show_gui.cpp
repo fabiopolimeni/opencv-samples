@@ -669,41 +669,41 @@ class ShowGUI : public entry::AppI {
 						bgfx::dbgTextPrintf(0, 8, 0x0f, "Channels Color Space: %s",
 							colorSpaceString.c_str());
 						
-						// Make sure we are in the right format and convert to UMat
-						cv::UMat bgr, colorSpaceImage;
+						// Make sure we are in the right format and convert to Mat
+						cv::Mat bgr, colorSpaceImage;
 						cameraFrame.convertTo(bgr, CV_8UC3);
 						
 						// Convert camera input to the requested color space
 						cv::cvtColor(bgr, colorSpaceImage, colorSpaceCode);
 						
 						// Separate the color space channels
-						std::vector<cv::UMat> channels;
+						std::vector<cv::Mat> channels;
 						cv::split(colorSpaceImage, channels);
 						
 						// Convert bgr to rgba and back to Mat
 						// that is image data can be transferred to GPU
-						cv::UMat rgba;
+						cv::Mat rgba;
 						cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
 						
-						cameraFrame = rgba.getMat(cv::ACCESS_READ).clone();
+						cameraFrame = rgba;//.getMat(cv::ACCESS_READ).clone();
 						for (auto i = 0; i < channels.size(); ++i) {
 							// Convert single channel image into RGBA.
 							// This is a required step because ImGUI is not capable
 							// of showing only one channel as grayscale image, nor has
 							// the ability to show an image with a custom shader.
-							cv::UMat grayRGBA;
+							cv::Mat grayRGBA;
 							cv::cvtColor(channels[i], grayRGBA, cv::COLOR_GRAY2BGRA);
 							
 							// Convert to Mat to access data from the CPU
-							frameChannels[i] = grayRGBA.getMat(cv::ACCESS_READ).clone();
+							frameChannels[i] = grayRGBA;//.getMat(cv::ACCESS_READ).clone();
 						}
 						
 						// Merge channels into a single image
 						//cv::Mat alphaOne = cv::Mat::ones(cameraFrame.rows, cameraFrame.cols, CV_8UC1);
 						cv::Mat grayChannels[] = {
-							channels[0].getMat(cv::ACCESS_READ).clone(),
-							channels[1].getMat(cv::ACCESS_READ).clone(),
-							channels[2].getMat(cv::ACCESS_READ).clone()
+							channels[0],//.getMat(cv::ACCESS_READ).clone(),
+							channels[1],//.getMat(cv::ACCESS_READ).clone(),
+							channels[2],//.getMat(cv::ACCESS_READ).clone()
 						};
 						
 						cv::merge(grayChannels, 3, colorSpaceFrame);
