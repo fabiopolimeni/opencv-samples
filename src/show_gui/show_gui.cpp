@@ -16,6 +16,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/core/utility.hpp>
 #include <opencv2/videoio.hpp>
+#include <opencv2/core/ocl.hpp>
 
 #include <iostream>
 #include <string>
@@ -47,8 +48,16 @@ namespace {
 
 	struct CameraInfo {
 		int32_t     id;
-		cv::Size    frame_size;
+		cv::Size    frameSize;
 		int32_t     fps;
+	};
+
+	struct OCLDevice {
+		int32_t		id;
+		std::string	name;
+		std::string	version;
+		bool		available;
+		bool		imageSupport;
 	};
 
 	std::vector<CameraInfo> enumerateCameras() {
@@ -79,8 +88,8 @@ namespace {
 	void printCameraInfo(const CameraInfo& camera) {
 		std::cout << std::endl
 			<< "Camera id: " << camera.id
-			<< " (" << camera.frame_size.width
-			<< "x" << camera.frame_size.height
+			<< " (" << camera.frameSize.width
+			<< "x" << camera.frameSize.height
 			<< "@" << camera.fps << ")"
 			<< std::endl;
 	}
@@ -108,6 +117,48 @@ namespace {
 		return r;
 	}
 
+	void printOpenCLDevice(const OCLDevice& device) {
+		std::cout << "OpenCL Device: " << device.name << std::endl;
+		std::cout << " - id:            " << device.id << std::endl;
+		std::cout << " - available:     " << std::boolalpha << device.available << std::endl;
+		std::cout << " - imageSupport:  " << std::boolalpha << device.imageSupport << std::endl;
+		std::cout << " - version:       " << device.version << std::endl;
+		std::cout << std::endl;
+	}
+
+	std::vector<OCLDevice> enumerateOpenCLDevices() {
+		std::vector<OCLDevice> devices;
+
+		cv::ocl::setUseOpenCL(true);
+		if (!cv::ocl::haveOpenCL())
+		{
+			return devices;
+		}
+
+		cv::ocl::Context context;
+		if (!context.create(cv::ocl::Device::TYPE_GPU))
+		{
+			std::cout << "Failed creating the context..." << std::endl;
+			return devices;
+		}
+
+		for (int32_t i = 0; i < context.ndevices(); ++i)
+		{
+			cv::ocl::Device device = context.device(i);
+			OCLDevice clDevice = {
+				i,
+				device.name(),
+				device.OpenCLVersion(),
+				device.available(),
+				device.imageSupport()
+			};
+
+			devices.push_back(clDevice);
+		}
+
+		return devices;
+	}
+
 	ImVec4 cvVec4bToImVec4f(const cv::Vec4b& color) {
 		ImU32 u32Color = (color[0]) | (color[1] << 8) | (color[2] << 16) | (color[3] << 24);
 		return ImGui::ColorConvertU32ToFloat4(u32Color);
@@ -119,79 +170,124 @@ namespace {
 	}
 }
 
+class FrameOptions {
+
+public:
+
+	bool printUsage;
+	bool cvInfo;
+	bool enumCameras;
+	bool enumOCLDevices;
+	bool useMultiThreading;
+
+	int32_t clDevice;
+	int32_t numOfFrames;
+	int32_t frameOffset;
+
+	int32_t cameraId;
+	int32_t frameWidth;
+	int32_t frameHeight;
+	int32_t requestedFPS;
+
+	// Parse command line arguments and set relevant properties.
+	// Return false if any argument is invalid, true otherwise.
+	bool init(int _argc, char** _argv) {
+		std::string options =
+			"{help usage h| |Program usage}"
+			"{opencv-info v| |OpenCV build info}"
+			"{enumerate-cameras c| |Enumerates available cameras}"
+			"{enumerate-ocl-devices l| |Enumerates OpenCL devices}"
+			"{opencl-device d|-1|Whether to use OpenCL device}"
+			"{frames-buffer f|2|Number of frames to hold in the buffer}"
+			"{frame-offset o|-1|Offset into the frame's buffer}"
+			"{multi-threaded m| |Enable multi-threading}"
+			"{@camera|0|Camera to show}"
+			"{@width|640|Desired frame width}"
+			"{@height|360|Desired frame height}"
+			"{@fps|60|Desired capture frame-rate}";
+
+		m_parser = new cv::CommandLineParser(_argc, _argv, options);
+		m_parser->about("Shows the view of the chosen camera");
+
+		if (!m_parser->check()) {
+			m_parser->printErrors();
+			return false;
+		}
+
+		// Flags
+		printUsage = m_parser->has("usage");
+		cvInfo = m_parser->has("opencv-info");
+		enumCameras = m_parser->has("enumerate-cameras");
+		enumOCLDevices = m_parser->has("enumerate-ocl-devices");
+		useMultiThreading = m_parser->has("multi-threaded");
+
+		// OpenCL device to use. -1 means no OpenCL process
+		clDevice = m_parser->get<int32_t>("opencl-device");
+
+		// Get the maximum number of frames we want to store into the frame's buffer
+		numOfFrames = clamp(m_parser->get<int32_t>("frames-buffer"), 1, 64);
+		frameOffset = clamp(m_parser->get<int32_t>("frame-offset"), -(numOfFrames -1), 0);
+
+		// Camera's frame properties
+		cameraId = m_parser->get<int32_t>("@camera");
+		frameWidth = m_parser->get<int32_t>("@width");
+		frameHeight = m_parser->get<int32_t>("@height");
+		requestedFPS = m_parser->get<int32_t>("@fps");
+
+		return true;
+	}
+
+	void printUsageMessage() {
+		m_parser->printMessage();
+	}
+
+	FrameOptions() : m_parser(nullptr) {
+
+	}
+
+	virtual ~FrameOptions() {
+		delete m_parser;
+	}
+
+private:
+
+	cv::CommandLineParser* m_parser;
+};
+
+class FrameProcessor {
+
+public:
+
+	bool init(int32_t _gpuDeviceId = -1) {
+		return false;
+	}
+
+};
+
 class FrameProvider {
 
 public:
 
-	bool init(int _argc, char** _argv) {
-		std::string options =
-			"{help usage h| |Program usage}"
-			"{info i| |OpenCV build info}"
-			"{enum e| |Enumerates available cameras}"
-			"{frames f|2|Number of frames in the buffer}"
-			"{offset o|-1|Offset into the frame's buffer}"
-			"{multi-threaded mt| |Multi-threaded}"
-			"{@camera|0|Camera to show}"
-			"{@width|640|Desired frame width}"
-			"{@height|360|Desired frame height}"
-			"{@fps|60|Desired frame-rate}";
-
-		cv::CommandLineParser parser(_argc, _argv, options);
-		parser.about("Shows the view of the chosen camera");
-
-		if (!parser.check()) {
-			parser.printErrors();
-			return false;
-		}
-
-		if (parser.has("info")) {
-			std::cout << cv::getBuildInformation() << std::endl;
-			return false;
-		}
-
-		if (parser.has("help")) {
-			parser.printMessage();
-			return false;
-		}
-
-		// Users wants to know the cameras availables
-		if (parser.has("e")) {
-			auto cameras = enumerateCameras();
-			std::cout << "Available cameras: " << std::endl;
-			for (auto camera : cameras) {
-				printCameraInfo(camera);
-			}
-			std::cout << std::flush;
-			return false;
-		}
-
+	bool init(int32_t _cameraId, int32_t _frameWidth, int32_t _frameHeight, int32_t _fps,
+		int32_t _frames, int32_t _offset, bool _isMultiThreaded) {
 		// Get the maximum number of frames we want to store into the frame's buffer
-		m_numOfFrames = clamp(parser.get<int32_t>("frames"), 1, 64);
+		m_numOfFrames = clamp(_frames, 1, 64);
 		m_cameraFrames = new Frame[m_numOfFrames];
 
-		m_frameOffset = clamp(parser.get<int32_t>("offset"), -(m_numOfFrames -1), 0);
+		m_frameOffset = clamp(_offset, -(m_numOfFrames -1), 0);
 
 		// Create a camera info for the given command line's arguments
-		CameraInfo ci = {
-			parser.get<int32_t>("@camera"),
-			cv::Size(
-				parser.get<int32_t>("@width"),
-				parser.get<int32_t>("@height")),
-			parser.get<int32_t>("@fps")
-		};
-
-		if (!m_videoCapture.open(ci.id)) {
-			std::cerr << "Camera " << ci.id << " is not available!" << std::endl;
-			parser.printMessage();
+		if (!m_videoCapture.open(_cameraId)) {
+			std::cerr << "Requested camera " << _cameraId << " is not available!" << std::endl;
 			return false;
 		}
 
-		m_videoCapture.set(CV_CAP_PROP_FRAME_WIDTH, (double)ci.frame_size.width);
-		m_videoCapture.set(CV_CAP_PROP_FRAME_HEIGHT, (double)ci.frame_size.height);
-		m_videoCapture.set(CV_CAP_PROP_FPS, (double)ci.fps);
+		m_videoCapture.set(CV_CAP_PROP_FRAME_WIDTH, (double)_frameWidth);
+		m_videoCapture.set(CV_CAP_PROP_FRAME_HEIGHT, (double)_frameHeight);
+		m_videoCapture.set(CV_CAP_PROP_FPS, (double)_fps);
 		
 		m_cameraInfo = {
-			ci.id,
+			_cameraId,
 			cv::Size(
 				(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_WIDTH),
 				(int32_t)m_videoCapture.get(CV_CAP_PROP_FRAME_HEIGHT)),
@@ -204,7 +300,7 @@ public:
 
 		// If multi-threading is enabled, create a
 		// thread and execute here the tick funciton.
-		m_isMultiThreaded = parser.has("multi-threaded");
+		m_isMultiThreaded = _isMultiThreaded;
 		if (m_isMultiThreaded) {
 			m_captureThread = std::thread([this]{
 				while(m_process.test_and_set(std::memory_order::memory_order_acq_rel)) {
@@ -283,6 +379,14 @@ public:
 
 	int32_t getNumberOfFramesInBuffer() const {
 		return m_numOfFrames;
+	}
+
+	FrameProvider() : m_cameraFrames(nullptr) {
+
+	}
+
+	virtual ~FrameProvider() {
+
 	}
 
 private:
@@ -485,8 +589,22 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual void init(int _argc, char** _argv) override	{
-		if (!m_frameProvider.init(_argc, _argv)) {
-			std::exit(EXIT_SUCCESS);
+		setState(NONE);
+
+		if (!m_frameOptions.init(_argc, _argv)) {
+			addState(EXIT_REQUEST);
+		}
+
+		if (!m_frameProvider.init(
+			m_frameOptions.cameraId,
+			m_frameOptions.frameWidth,
+			m_frameOptions.frameHeight,
+			m_frameOptions.requestedFPS,
+			m_frameOptions.numOfFrames,
+			m_frameOptions.frameOffset,
+			m_frameOptions.useMultiThreading
+		)) {
+			addState(EXIT_REQUEST);
 		}
 
 		initBgfx(_argc, _argv);
@@ -496,8 +614,8 @@ class ShowGUI : public entry::AppI {
 
 		// Create the texture to hold camera input image
 		m_texRGBA = bgfx::createTexture2D(
-			cameraInfo.frame_size.width,					// width
-			cameraInfo.frame_size.height,					// height
+			cameraInfo.frameSize.width,						// width
+			cameraInfo.frameSize.height,					// height
 			false, 											// no mip-maps
 			1,												// number of layers
 			bgfx::TextureFormat::Enum::RGBA8,				// format
@@ -508,8 +626,8 @@ class ShowGUI : public entry::AppI {
 		// Create textures for displaing the channels separately
 		for (auto& tex : m_texChannels) {
 			tex = bgfx::createTexture2D(
-				cameraInfo.frame_size.width,					// width
-				cameraInfo.frame_size.height,					// height
+				cameraInfo.frameSize.width,					// width
+				cameraInfo.frameSize.height,					// height
 				false, 											// no mip-maps
 				1,												// number of layers
 				bgfx::TextureFormat::Enum::RGBA8,				// format
@@ -537,8 +655,54 @@ class ShowGUI : public entry::AppI {
 
 		inputAddBindings("showgui_bindings", bindings);
 
+		// Parse options
+		{
+			if (m_frameOptions.printUsage) {
+				m_frameOptions.printUsageMessage();
+				addState(EXIT_REQUEST);
+			}
+
+			if  (m_frameOptions.cvInfo) {
+				std::cout << cv::getBuildInformation() << std::endl;
+				addState(EXIT_REQUEST);
+			}
+
+			if (m_frameOptions.enumCameras) {
+				auto cameras = enumerateCameras();
+
+				if (!cameras.empty()) {
+					std::cout << "-- Available cameras --" << std::endl;
+					for (auto camera : cameras) {
+						printCameraInfo(camera);
+					}
+				}
+				else {
+					std::cout << "!! No camera available !!" << std::endl;
+				}
+
+				std::cout << std::flush;
+				addState(EXIT_REQUEST);
+			}
+
+			if (m_frameOptions.enumOCLDevices) {
+				auto devices = enumerateOpenCLDevices();
+
+				if (!devices.empty()) {
+					std::cout << "-- Available OpenCL devices --" << std::endl;
+					for (auto device : devices) {
+						printOpenCLDevice(device);
+					}
+				}
+				else {
+					std::cout << "!! No OpenCL device available !!" << std::endl;
+				}
+
+				std::cout << std::flush;
+				addState(EXIT_REQUEST);
+			}
+		}
+
 		// Set initial states
-		m_states = NONE;
 		addState(SHOW_CAMERA);
 		addState(COLOR_SPACE_RGB);
 
@@ -609,8 +773,8 @@ class ShowGUI : public entry::AppI {
 			// Set view 0 default viewport.
 			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height));
 
-			// This dummy draw call is here to make sure that view 0 is cleared
-			// if no other draw calls are submitted to view 0.
+			// This dummy draw call is here to make sure that view 0 is
+			// cleared if no other draw calls are submitted to view 0.
 			bgfx::touch(0);
 
 			// Use debug font to print information about this example.
@@ -634,7 +798,7 @@ class ShowGUI : public entry::AppI {
 					auto cameraInfo = m_frameProvider.getCameraInfo();
 					
 					bgfx::dbgTextPrintf(0, 6, 0x0f, "Video Capture %dx%d @%d fps (%s)",
-						cameraInfo.frame_size.width, cameraInfo.frame_size.height, cameraInfo.fps,
+						cameraInfo.frameSize.width, cameraInfo.frameSize.height, cameraInfo.fps,
 						m_frameProvider.isMultiThreaded() ? "multi-threaded" : "single-thread");
 					
 					bgfx::dbgTextPrintf(0, 7, 0x0f, "Camera Frame %dx%d (type: %s frames: %d)",
@@ -896,6 +1060,10 @@ class ShowGUI : public entry::AppI {
 			| COLOR_SPACE_RGB
 	};
 
+	void setState(State s) {
+		m_states = (uint32_t)s;
+	}
+
 	void addState(State s) {
 		m_states |= (uint32_t)s;
 	}
@@ -921,6 +1089,8 @@ class ShowGUI : public entry::AppI {
 		addState(EXIT_REQUEST);
 	}
 
+	FrameOptions			m_frameOptions;
+	FrameProcessor			m_frameProcessor;
 	FrameProvider			m_frameProvider;
 
     entry::MouseState 		m_mouseState;
