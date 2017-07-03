@@ -1,8 +1,9 @@
 #include <bx/bx.h>
 #include <bx/uint32_t.h>
 #include <bx/string.h>
-#include <bgfx/bgfx.h>
 #include <bx/crtimpl.h>
+#include <bx/spscqueue.h>
+#include <bgfx/bgfx.h>
 
 #include "entry/entry.h"
 #include "entry/input.h"
@@ -126,7 +127,8 @@ namespace {
 		std::cout << std::endl;
 	}
 
-	std::vector<OCLDevice> enumerateOpenCLDevices() {
+	std::vector<OCLDevice> enumerateOpenCLDevices(
+		int32_t _deviceType = cv::ocl::Device::TYPE_ALL) {
 		std::vector<OCLDevice> devices;
 
 		cv::ocl::setUseOpenCL(true);
@@ -136,7 +138,7 @@ namespace {
 		}
 
 		cv::ocl::Context context;
-		if (!context.create(cv::ocl::Device::TYPE_GPU))
+		if (!context.create(_deviceType))
 		{
 			std::cout << "Failed creating the context..." << std::endl;
 			return devices;
@@ -258,9 +260,46 @@ class FrameProcessor {
 
 public:
 
-	bool init(int32_t _gpuDeviceId = -1) {
+	bool init(int32_t _oclDeviceId = -1,
+		int32_t _deviceType = cv::ocl::Device::TYPE_ALL) {
+		m_oclDeviceId = _oclDeviceId;
+
+		if (m_oclDeviceId >= 0) {
+			auto devices = enumerateOpenCLDevices();
+			if (devices.size() > m_oclDeviceId) {
+				m_oclContext = cv::ocl::Context();
+				m_oclContext.create(_deviceType);
+				cv::ocl::Device(m_oclContext.device(m_oclDeviceId));
+			}
+			else {
+				m_oclDeviceId = -1; // Disable OpenCL device
+			}
+		}
+		
+		// Enable OpenCL if requested
+		cv::ocl::setUseOpenCL(!(m_oclDeviceId < 0));
 		return false;
 	}
+
+	void process() {
+		if (m_oclDeviceId >= 0) {
+			cv::ocl::Device(m_oclContext.device(m_oclDeviceId));
+		}
+	}
+
+	void push(const cv::Mat& _frame) {
+
+	}
+
+	const cv::Mat& pop() {
+
+	}
+
+private:
+
+	bx::SpScUnboundedQueueT<cv::UMat>	m_framesQueue;
+	cv::ocl::Context					m_oclContext;
+	int32_t 							m_oclDeviceId;
 
 };
 
@@ -595,6 +634,57 @@ class ShowGUI : public entry::AppI {
 			addState(EXIT_REQUEST);
 		}
 
+		// Parse possible exit options
+		{
+			if (m_frameOptions.printUsage) {
+				m_frameOptions.printUsageMessage();
+				addState(EXIT_REQUEST);
+			}
+
+			if  (m_frameOptions.cvInfo) {
+				std::cout << cv::getBuildInformation() << std::endl;
+				addState(EXIT_REQUEST);
+			}
+
+			if (m_frameOptions.enumCameras) {
+				auto cameras = enumerateCameras();
+
+				if (!cameras.empty()) {
+					std::cout << "-- Available cameras --" << std::endl;
+					for (auto camera : cameras) {
+						printCameraInfo(camera);
+					}
+				}
+				else {
+					std::cout << "!! No camera available !!" << std::endl;
+				}
+
+				std::cout << std::flush;
+				addState(EXIT_REQUEST);
+			}
+
+			if (m_frameOptions.enumOCLDevices) {
+				auto devices = enumerateOpenCLDevices();
+
+				if (!devices.empty()) {
+					std::cout << "-- Available OpenCL devices --" << std::endl;
+					for (auto device : devices) {
+						printOpenCLDevice(device);
+					}
+				}
+				else {
+					std::cout << "!! No OpenCL device available !!" << std::endl;
+				}
+
+				std::cout << std::flush;
+				addState(EXIT_REQUEST);
+			}
+
+			if (hasState(EXIT_REQUEST)) {
+				std::exit(EXIT_SUCCESS);
+			}
+		}
+
 		if (!m_frameProvider.init(
 			m_frameOptions.cameraId,
 			m_frameOptions.frameWidth,
@@ -605,10 +695,16 @@ class ShowGUI : public entry::AppI {
 			m_frameOptions.useMultiThreading
 		)) {
 			addState(EXIT_REQUEST);
+			std::exit(EXIT_FAILURE);
 		}
 
+		addState(OPENCV_INIT);
+
 		initBgfx(_argc, _argv);
+		addState(BGFX_INIT);
+
 		initGUI(_argc, _argv);
+		addState(GUI_INIT);
 
 		auto cameraInfo = m_frameProvider.getCameraInfo();
 
@@ -655,53 +751,6 @@ class ShowGUI : public entry::AppI {
 
 		inputAddBindings("showgui_bindings", bindings);
 
-		// Parse options
-		{
-			if (m_frameOptions.printUsage) {
-				m_frameOptions.printUsageMessage();
-				addState(EXIT_REQUEST);
-			}
-
-			if  (m_frameOptions.cvInfo) {
-				std::cout << cv::getBuildInformation() << std::endl;
-				addState(EXIT_REQUEST);
-			}
-
-			if (m_frameOptions.enumCameras) {
-				auto cameras = enumerateCameras();
-
-				if (!cameras.empty()) {
-					std::cout << "-- Available cameras --" << std::endl;
-					for (auto camera : cameras) {
-						printCameraInfo(camera);
-					}
-				}
-				else {
-					std::cout << "!! No camera available !!" << std::endl;
-				}
-
-				std::cout << std::flush;
-				addState(EXIT_REQUEST);
-			}
-
-			if (m_frameOptions.enumOCLDevices) {
-				auto devices = enumerateOpenCLDevices();
-
-				if (!devices.empty()) {
-					std::cout << "-- Available OpenCL devices --" << std::endl;
-					for (auto device : devices) {
-						printOpenCLDevice(device);
-					}
-				}
-				else {
-					std::cout << "!! No OpenCL device available !!" << std::endl;
-				}
-
-				std::cout << std::flush;
-				addState(EXIT_REQUEST);
-			}
-		}
-
 		// Set initial states
 		addState(SHOW_CAMERA);
 		addState(COLOR_SPACE_RGB);
@@ -711,15 +760,23 @@ class ShowGUI : public entry::AppI {
 	}
 
 	virtual int shutdown() override	{
-		m_frameProvider.shutdown();
-		imguiDestroy();
+		if (hasState(GUI_INIT)) {
+			imguiDestroy();
+		}
 		
-		bgfx::destroyTexture(m_texRGBA);
-		for (auto tex : m_texChannels) {
-			bgfx::destroyTexture(tex);
+		if (hasState(BGFX_INIT)) {
+			bgfx::destroyTexture(m_texRGBA);
+			for (auto tex : m_texChannels) {
+				bgfx::destroyTexture(tex);
+			}
+
+			bgfx::shutdown();
 		}
 
-		bgfx::shutdown();
+		if (hasState(OPENCV_INIT)) {
+			m_frameProvider.shutdown();
+		}
+
 		return EXIT_SUCCESS;
 	}
 
@@ -915,7 +972,7 @@ class ShowGUI : public entry::AppI {
 							cv::Rect imageROI = cv::Rect(0, 0, cameraFrame.cols, cameraFrame.rows);
 							
 							if (imageROI.contains(mouseAtPixel)) {
-								// RGB pixel color at requested image coordinates
+								// RGB pixel at requested image coordinates
 								cv::Vec4b pixelColor = cameraFrame.at<cv::Vec4b>(
 									mouseAtPixel.y, mouseAtPixel.x);
 								cv::Vec3b pixelSpace = colorSpaceFrame.at<cv::Vec3b>(
@@ -954,10 +1011,12 @@ class ShowGUI : public entry::AppI {
 											// Create a matrix image of one pixel only.
 											cv::Mat3b lowerImage(lowerColor);
 											cv::Mat3b upperImage(upperColor);
+											
 											// Convert these 1x1 matrices to RGB space,
 											// but we are already operating in RGB.
 											cv::cvtColor(lowerImage, lowerImage, rgbToColorSpace);
 											cv::cvtColor(upperImage, upperImage, rgbToColorSpace);
+											
 											// Read back the pixel in RGB for readibility purpose
 											m_minColor = cvVec3bToImVec4f(lowerImage(0, 0));
 											m_maxColor = cvVec3bToImVec4f(upperImage(0, 0));
@@ -1057,7 +1116,11 @@ class ShowGUI : public entry::AppI {
 			  COLOR_SPACE_Lab		
 			| COLOR_SPACE_YCrCb
 			| COLOR_SPACE_HSV		
-			| COLOR_SPACE_RGB
+			| COLOR_SPACE_RGB,
+		
+		OPENCV_INIT		= (1<<6),
+		BGFX_INIT		= (1<<7),
+		GUI_INIT		= (1<<8)
 	};
 
 	void setState(State s) {
